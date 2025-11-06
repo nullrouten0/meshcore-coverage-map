@@ -1,0 +1,19 @@
+html,
+body,
+#map {
+  height: 100%;
+  margin: 0;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+}
+
+.leaflet-popup-content {
+  font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+.attribution-tweak .leaflet-control-attribution {
+  font-size: 11px;
+}

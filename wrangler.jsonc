@@ -3,6 +3,17 @@
     "name": "mesh-map",
     "pages_build_output_dir": ".",
     "compatibility_date": "2025-11-05",
-    "compatibility_flags": ["nodejs_compat"]
-  }
-  
+    "compatibility_flags": [
+        "nodejs_compat"
+    ],
+    "kv_namespaces": [
+        {
+            "binding": "SAMPLES",
+            "id": "mesh-map-samples"
+        },
+        {
+            "binding": "REPEATERS",
+            "id": "mesh-map-repeaters"
+        }
+    ]
+}
