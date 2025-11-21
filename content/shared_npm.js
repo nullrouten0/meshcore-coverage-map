@@ -19,8 +19,8 @@ export function haversineMiles(a, b) {
   const dLon = toRad(lon2 - lon1);
 
   const h = Math.sin(dLat / 2) ** 2 +
-            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-            Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
 
   return 2 * R * Math.asin(Math.sqrt(h));
 }
@@ -44,24 +44,33 @@ function roundToFourPlaces(n) {
 }
 
 export function parseLocation(latStr, lonStr) {
-    let lat = parseFloat(latStr);
-    let lon = parseFloat(lonStr);
-  
-    if (isNaN(lat) || isNaN(lon)) {
-      throw new Error(`Invalid location ${[latStr, lonStr]}`);
-    }
+  let lat = parseFloat(latStr);
+  let lon = parseFloat(lonStr);
 
-    lat = roundToFourPlaces(lat);
-    lon = roundToFourPlaces(lon);
-  
-    if (!isValidLocation([lat, lon])) {
-      throw new Error(`${[lat, lon]} exceeds max distance`);
-    }
+  if (isNaN(lat) || isNaN(lon)) {
+    throw new Error(`Invalid location ${[latStr, lonStr]}`);
+  }
 
-    return [lat, lon];
+  lat = roundToFourPlaces(lat);
+  lon = roundToFourPlaces(lon);
+
+  if (!isValidLocation([lat, lon])) {
+    throw new Error(`${[lat, lon]} exceeds max distance`);
+  }
+
+  return [lat, lon];
 }
 
 export function ageInDays(time) {
   const dayInMillis = 24 * 60 * 60 * 1000;
   return (Date.now() - new Date(time)) / dayInMillis;
+}
+
+// Adds the value to a list associated with key.
+export function pushMap(map, key, value) {
+  const items = map.get(key);
+  if (items)
+    items.push(value);
+  else
+    map.set(key, [value]);
 }

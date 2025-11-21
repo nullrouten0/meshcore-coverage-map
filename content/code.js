@@ -1,4 +1,4 @@
-import { ageInDays, haversineMiles } from './shared.js'
+import { ageInDays, haversineMiles, pushMap, geo } from './shared.js'
 
 // Global Init
 const map = L.map('map', { worldCopyJump: true }).setView([47.76837, -122.06078], 10);
@@ -7,14 +7,23 @@ const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
-let edgeLayer = L.layerGroup().addTo(map);
-let sampleLayer = L.layerGroup().addTo(map);
-let repeaterLayer = L.layerGroup().addTo(map);
-let nodes = null; // Holds fetched results.
+// Control state
 let repeaterRenderMode = 'hit';
 let repeaterSearch = '';
 let showEdges = true;
 
+// Data
+let nodes = null; // Graph data from the last refresh
+let idToRepeaters = null; // Index of id -> [repeater]
+let hashToSamples = null; // Index of geohash -> [sample]
+
+// Map layers
+let tileLayer = L.layerGroup().addTo(map);
+let edgeLayer = L.layerGroup().addTo(map);
+let sampleLayer = L.layerGroup().addTo(map);
+let repeaterLayer = L.layerGroup().addTo(map);
+
+// Map controls
 const mapControl = L.control({ position: 'topright' });
 mapControl.onAdd = m => {
   const div = L.DomUtil.create('div', 'mesh-control leaflet-control');
@@ -85,9 +94,35 @@ function escapeHtml(s) {
     .replaceAll('>', '&gt;');
 }
 
+function coverageMarker(hash, paths, samples) {
+  const [minLat, minLon, maxLat, maxLon] = geo.decode_bbox(hash);
+  const color = paths.size > 0 ? '#07ac07' : '#e96767';
+  const latest = samples.reduce((max, curr) => max.time > curr.time ? max : curr, 0);
+  let [heard, lost] = [0, 0];
+  samples.forEach(s => {
+    // TODO: iterate once for everything
+    if (s.path.length > 0) heard++;
+    else lost++;
+  });
+  const date = new Date(latest.time);
+  const style = {
+    color: color,
+    weight: 1,
+    fillOpacity: .3,
+  };
+  const rect = L.rectangle([[minLat, minLon], [maxLat, maxLon]], style);
+  const details = `
+    <strong>${hash}</strong><br/>
+    Heard: ${heard} Lost: ${lost} (${(100 * heard / (heard + lost)).toFixed(0)}%)<br/>
+    Updated: ${date.toLocaleString()}
+    ${paths.size === 0 ? '' : '<br/>Repeaters: ' + Array.from(paths).join(',')}`;
+  rect.bindPopup(details, { maxWidth: 320 });
+  return rect;
+}
+
 function sampleMarker(s) {
   const color = s.path.length > 0 ? '#07ac07' : '#e96767';
-  const style = { radius: 6, weight: 1, color: color, fillOpacity: .9 };
+  const style = { radius: 5, weight: 1, color: color, fillOpacity: .8 };
   const marker = L.circleMarker([s.lat, s.lon], style);
   const date = new Date(s.time);
   const details = `
@@ -140,61 +175,90 @@ function getNearestRepeater(fromPos, repeaterList) {
 }
 
 function renderNodes(nodes) {
+  tileLayer.clearLayers();
+  edgeLayer.clearLayers();
   sampleLayer.clearLayers();
   repeaterLayer.clearLayers();
-  edgeLayer.clearLayers();
   const outEdges = [];
-  const idToRepeaters = new Map();
+
+  // Add coverage boxes.
+  hashToSamples.entries().forEach(([hash, samples]) => {
+    const { latitude: lat, longitude: lon } = geo.decode(hash);
+    const allPaths = new Set();
+
+    samples.forEach(s => {
+      s.path.forEach(p => allPaths.add(p));
+    });
+    allPaths.forEach(p => {
+      outEdges.push({ id: p, pos: [lat, lon] });
+    });
+
+    tileLayer.addLayer(coverageMarker(hash, allPaths, samples));
+  });
 
   // Add samples.
   nodes.samples.forEach(s => {
+    if (ageInDays(s.time) > 2)
+      return;
+
     sampleLayer.addLayer(sampleMarker(s));
-    s.path.forEach(p => {
-      outEdges.push({ id: p, pos: [s.lat, s.lon] });
-    });
+    // Added by coverage. TODO: Either/or with setting?
+    // s.path.forEach(p => {
+    //   outEdges.push({ id: p, pos: [s.lat, s.lon] });
+    // });
   });
 
   // Are repeaters/edges needed?
   if (repeaterRenderMode === 'none') return;
 
-  // TODO: Build indexes once.
-  // Index repeaters.
-  nodes.repeaters.forEach(r => {
-    if (repeaterSearch !== '') {
-      if (!r.id.toLowerCase().startsWith(repeaterSearch))
-        return; // Skip nodes that don't match.
-    }
+  // Helper to decide if a repeater id should be shown.
+  const shouldShowId = id =>
+    repeaterSearch !== '' ? id.toLowerCase().startsWith(repeaterSearch) : true;
 
-    const repeaterList = idToRepeaters.get(r.id) ?? [];
-    repeaterList.push(r);
-    idToRepeaters.set(r.id, repeaterList);
-  });
-
-  // TODO: render paths only when hovered over a sample.
-
+  // TODO: only render paths when hovered over a sample. LayerGroups?
+  // TODO: hit list can be computed once, edges can be computed once.
   // Draw edges, determine hit repeaters.
   const hitRepeaters = new Set();
   const showAll = repeaterRenderMode === 'all';
   outEdges.forEach(edge => {
-    const candidates = idToRepeaters.get(edge.id);
-    if (candidates === undefined) {
-      //console.log(`Missing repeater ${edge.id}`);
+    if (!shouldShowId(edge.id))
       return;
-    }
+
+    const candidates = idToRepeaters.get(edge.id);
+    if (candidates === undefined)
+      return;
 
     const from = edge.pos;
     const nearest = getNearestRepeater(from, candidates);
     const to = [nearest.lat, nearest.lon];
     hitRepeaters.add(nearest);
+
     if (showEdges === true) {
-      L.polyline([from, to], { weight: 2, opacity: 0.6, dashArray: '1,6' }).addTo(edgeLayer);
+      L.polyline([from, to], { weight: 2, opacity: 0.8, dashArray: '1,6' }).addTo(edgeLayer);
     }
   });
 
   // Add repeaters.
   const repeatersToAdd = showAll ? [...idToRepeaters.values()].flat() : hitRepeaters;
   repeatersToAdd.forEach(r => {
-    repeaterLayer.addLayer(repeaterMarker(r));
+    if (shouldShowId(r.id))
+      repeaterLayer.addLayer(repeaterMarker(r));
+  });
+}
+
+function buildIndex(nodes) {
+  hashToSamples = new Map();
+  idToRepeaters = new Map();
+
+  // Index samples as precision 6.
+  nodes.samples.forEach(s => {
+    const key = geo.encode(s.lat, s.lon, 6);
+    pushMap(hashToSamples, key, s);
+  });
+
+  // Index repeaters.
+  nodes.repeaters.forEach(r => {
+    pushMap(idToRepeaters, r.id, r);
   });
 }
 
@@ -206,5 +270,6 @@ export async function refreshCoverage() {
     throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
 
   nodes = await resp.json();
+  buildIndex(nodes);
   renderNodes(nodes);
 }

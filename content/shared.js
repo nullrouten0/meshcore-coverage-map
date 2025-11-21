@@ -377,11 +377,19 @@ function ageInDays(time) {
   const dayInMillis = 24 * 60 * 60 * 1e3;
   return (Date.now() - new Date(time)) / dayInMillis;
 }
+function pushMap(map, key, value) {
+  const items = map.get(key);
+  if (items)
+    items.push(value);
+  else
+    map.set(key, [value]);
+}
 var export_geo = import_ngeohash.default;
 export {
   ageInDays,
   export_geo as geo,
   haversineMiles,
   parseLocation,
+  pushMap,
   sampleKey
 };
