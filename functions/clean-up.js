@@ -1,8 +1,10 @@
 import * as util from '../content/shared.js';
 
-async function cleanCoverage(context) {
+async function cleanCoverage(context, result) {
   const store = context.env.COVERAGE;
   let cursor = null;
+
+  result.coverage_deduped = 0;
 
   do {
     const coverage = await store.list({ cursor: cursor });
@@ -48,7 +50,8 @@ async function cleanCoverage(context) {
         await store.put(key.name, newValueJson, {
           metadata: key.metadata
         });
-
+        result.coverage_deduped++;
+        
       } catch (e) {
         console.log(`Error handling ${key}: ${e}`);
       }
@@ -56,7 +59,7 @@ async function cleanCoverage(context) {
   } while (cursor !== null);
 }
 
-async function cleanSamples(context) {
+async function cleanSamples(context, result) {
   // This should mostly be done by consolidate.js
 }
 
@@ -92,9 +95,11 @@ function groupByOverlap(items) {
 }
 
 async function deduplicateGroup(group, store) {
+  let deletedRepeaters = 0;
+
   if (group.items.length === 1) {
     //console.log(`Group ${group.id} ${group.loc} only has 1 item.`);
-    return;
+    return deletedRepeaters;
   }
 
   // In groups with duplicates, keep the newest.
@@ -111,13 +116,19 @@ async function deduplicateGroup(group, store) {
   await Promise.all(itemsToDelete.map(async i => {
     console.log(`Deleting duplicate of [${group.id} ${group.loc}] ${i.name}`);
     await store.delete(i.name);
+    deletedRepeaters++;
   }));
+
+  return deletedRepeaters;
 }
 
-async function cleanRepeaters(context) {
+async function cleanRepeaters(context, result) {
   const store = context.env.REPEATERS;
   const repeatersList = await store.list();
   const indexed = new Map();
+
+  result.deleted_stale_repeaters = 0;
+  result.deleted_dupe_repeaters = 0;
 
   // Delete stale entries.
   await Promise.all(repeatersList.keys.map(async r => {
@@ -125,6 +136,7 @@ async function cleanRepeaters(context) {
     if (util.ageInDays(time) > 10) {
       console.log(`Deleting stale ${r.name}`);
       await store.delete(r.name);
+      result.deleted_stale_repeaters++;
     }
   }));
 
@@ -141,16 +153,18 @@ async function cleanRepeaters(context) {
     if (val.length >= 1) {
       const groups = groupByOverlap(val);
       await Promise.all(groups.map(async g => {
-        await deduplicateGroup(g, store);
+        result.deleted_dupe_repeaters += await deduplicateGroup(g, store);
       }));
     }
   }));
 }
 
 export async function onRequest(context) {
-  await cleanCoverage(context);
-  await cleanSamples(context);
-  await cleanRepeaters(context);
+  const result = {};
 
-  return new Response('OK');
+  await cleanCoverage(context, result);
+  await cleanSamples(context, result);
+  await cleanRepeaters(context, result);
+
+  return new Response(JSON.stringify(result));
 }

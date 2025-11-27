@@ -13,10 +13,11 @@ async function mergeCoverage(key, samples, store) {
     hitRepeaters: entry?.metadata?.hitRepeaters ?? []
   };
 
-  // Add new samples to the value list.
-  // TODO: should be a Set
+  // Add new, distinct samples to the value list.
   samples.forEach(s => {
-    value.push({ time: s.time, path: s.path });
+    const found = value.find(v => v.time == s.time);
+    if (!found) 
+      value.push({ time: s.time, path: s.path });
   });
 
   // Go through all values and compute stats.
