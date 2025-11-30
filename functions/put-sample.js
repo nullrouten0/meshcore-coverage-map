@@ -7,7 +7,7 @@ export async function onRequest(context) {
 
   const [lat, lon] = parseLocation(data.lat, data.lon);
   const time = Date.now();
-  const path = data.path ?? [];
+  const path = (data?.path ?? []).map(p => toLowerCase());
 
   const key = sampleKey(lat, lon);
   const metadata = { time: time, path: path };

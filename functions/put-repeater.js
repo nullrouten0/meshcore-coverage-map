@@ -26,7 +26,7 @@ export async function onRequest(context) {
   
   const [lat, lon] = parseLocation(data.lat, data.lon);
   const time = Date.now();
-  const id = data.id;
+  const id = data.id.toLowerCase();
   const name = data.name;
 
   const key = `${id}|${lat.toFixed(4)}|${lon.toFixed(4)}`;

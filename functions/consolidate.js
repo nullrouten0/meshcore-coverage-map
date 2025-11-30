@@ -27,7 +27,7 @@ async function mergeCoverage(key, samples, store) {
     metadata.heard += heard ? 1 : 0;
     metadata.lost += !heard ? 1 : 0;
     metadata.lastHeard = Math.max(metadata.lastHeard, s.time);
-    s.path.forEach(p => pathSet.add(p));
+    s.path.forEach(p => pathSet.add(p.toLowerCase()));
   });
 
   metadata.hitRepeaters = [...pathSet];

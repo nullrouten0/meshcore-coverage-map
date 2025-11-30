@@ -357,8 +357,9 @@ function buildIndexes(nodes) {
     coverage.lost += !heard ? 1 : 0;
     coverage.lastHeard = Math.max(coverage.lastHeard, s.time);
     s.path.forEach(p => {
-      if (!coverage.hitRepeaters.includes(p))
-        coverage.hitRepeaters.push(p);
+      const lp = p.toLowerCase();
+      if (!coverage.hitRepeaters.includes(lp))
+        coverage.hitRepeaters.push(lp);
     });
   });
 
