@@ -41,7 +41,7 @@ export async function onRequest(context) {
   const archiveStore = context.env.ARCHIVE;
 
   const url = new URL(context.request.url);
-  const maxAge = url.searchParams.get('maxAge') ?? 2; // Days
+  const maxAge = url.searchParams.get('maxAge') ?? 1; // Days
 
   const result = {
     coverage_entites_to_update: 0,

@@ -275,7 +275,7 @@ async function updateCurrentPosition() {
   const coverageTileId = coverageKey(lat, lon);
   const needsPing = !state.coveredTiles.has(coverageTileId);
   currentTileEl.innerText = coverageTileId;
-  currentNeedsPingEl.innerText = needsPing ? "yes" : "no";
+  currentNeedsPingEl.innerText = needsPing ? "✅" : "⛔";
 
   state.lastPosUpdate = Date.now();
 }

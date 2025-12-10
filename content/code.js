@@ -14,7 +14,7 @@ import {
 const map = L.map('map', { worldCopyJump: true }).setView([47.76837, -122.06078], 10);
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
-  attribution: '© OpenStreetMap contributors'
+  attribution: '© OpenStreetMap contributors | <a href="/howto" target="_blank">Contribute</a>'
 }).addTo(map);
 
 // Control state
