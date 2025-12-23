@@ -27,6 +27,7 @@ let nodes = null; // Graph data from the last refresh
 let idToRepeaters = null; // Index of id -> [repeater]
 let hashToCoverage = null; // Index of geohash -> coverage
 let edgeList = null; // List of connected repeater and coverage
+let individualSamples = null; // Individual (non-aggregated) samples
 
 // Map layers
 const coverageLayer = L.layerGroup().addTo(map);
@@ -150,9 +151,19 @@ mapControl.onAdd = m => {
     });
 
   div.querySelector("#show-samples")
-    .addEventListener("change", (e) => {
+    .addEventListener("change", async (e) => {
       showSamples = e.target.checked;
-      sampleLayer.eachLayer(s => updateSampleMarkerVisibility(s));
+      if (showSamples) {
+        // Fetch and display all individual samples
+        await loadIndividualSamples();
+      } else {
+        // Clear individual samples and show aggregated view
+        clearIndividualSamples();
+        // Re-render with aggregated samples from nodes
+        if (nodes) {
+          renderNodes(nodes);
+        }
+      }
     });
 
   div.querySelector("#refresh-map-button")
@@ -289,6 +300,31 @@ function sampleMarker(s) {
     Updated: ${date.toLocaleString()}`;
   marker.bindPopup(details, { maxWidth: 320 });
   marker.on('add', () => updateSampleMarkerVisibility(marker));
+  return marker;
+}
+
+function individualSampleMarker(sample) {
+  const [lat, lon] = posFromHash(sample.name);
+  // Individual sample: heard = has path, lost = no path
+  const heard = sample.metadata.path && sample.metadata.path.length > 0;
+  const color = heard ? successRateToColor(1.0) : successRateToColor(0.0); // Green if heard, red if lost
+  const style = { 
+    radius: 4, // Smaller for individual samples
+    weight: 1, 
+    color: color, 
+    fillColor: color,
+    fillOpacity: 0.8 
+  };
+  const marker = L.circleMarker([lat, lon], style);
+  const date = new Date(sample.metadata.time);
+  const repeaters = sample.metadata.path || [];
+  const details = `
+    <strong>${sample.name}</strong><br/>
+    ${lat.toFixed(4)}, ${lon.toFixed(4)}<br/>
+    Status: ${heard ? '<span style="color: green;">Heard</span>' : '<span style="color: red;">Lost</span>'}<br/>
+    ${repeaters.length > 0 ? '<br/>Repeaters: ' + repeaters.join(', ') : 'No repeaters heard'}<br/>
+    Time: ${date.toLocaleString()}`;
+  marker.bindPopup(details, { maxWidth: 320 });
   return marker;
 }
 
@@ -440,10 +476,18 @@ function renderNodes(nodes) {
     coverageLayer.addLayer(coverageMarker(coverage));
   });
 
-  // Add recent samples.
-  nodes.samples.forEach(s => {
-    sampleLayer.addLayer(sampleMarker(s));
-  });
+  // Add samples (aggregated if showSamples is false, individual if true)
+  if (showSamples && individualSamples) {
+    // Show individual samples
+    individualSamples.keys.forEach(s => {
+      sampleLayer.addLayer(individualSampleMarker(s));
+    });
+  } else {
+    // Show aggregated samples
+    nodes.samples.forEach(s => {
+      sampleLayer.addLayer(sampleMarker(s));
+    });
+  }
 
   // Add repeaters.
   const repeatersToAdd = [...idToRepeaters.values()].flat();
@@ -609,6 +653,32 @@ function updateRepeatersList(contentDiv) {
   
   html += '</tbody></table>';
   contentDiv.innerHTML = html;
+}
+
+async function loadIndividualSamples() {
+  try {
+    const endpoint = "/get-samples";
+    const resp = await fetch(endpoint, { headers: { 'Accept': 'application/json' } });
+
+    if (!resp.ok)
+      throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+
+    individualSamples = await resp.json();
+    
+    // Clear sample layer and render with individual samples
+    sampleLayer.clearLayers();
+    individualSamples.keys.forEach(s => {
+      sampleLayer.addLayer(individualSampleMarker(s));
+    });
+  } catch (error) {
+    console.error("Error loading individual samples:", error);
+    alert("Failed to load individual samples: " + error.message);
+  }
+}
+
+function clearIndividualSamples() {
+  individualSamples = null;
+  // Don't clear the layer here - renderNodes will handle it
 }
 
 export async function refreshCoverage() {

@@ -41,11 +41,11 @@ docker-compose --version
 ```bash
 # 1. Clone the repository
 git clone <repository-url>
-cd meshcore-coverage-map/server
+cd meshcore-coverage-map
 
 # 2. Configure environment
-cp .env.example .env
-# Edit .env with your settings (optional for development)
+cp server/.env.example server/.env
+# Edit server/.env with your settings (optional for development)
 
 # 3. Start the application
 docker-compose up --build
@@ -56,8 +56,7 @@ The application will be available at `http://localhost:3000`
 ## Development
 
 ```bash
-cd server
-cp .env.example .env  # Edit with your settings if needed
+cp server/.env.example server/.env  # Edit with your settings if needed
 docker-compose up --build
 ```
 
@@ -71,9 +70,8 @@ docker-compose up --build
 
 1. **Configure environment:**
    ```bash
-   cd server
-   cp .env.example .env
-   # Edit .env with production values
+   cp server/.env.example server/.env
+   # Edit server/.env with production values
    ```
 
 2. **Stop any existing containers:**
@@ -88,7 +86,7 @@ docker-compose up --build
 
 ## Configuration
 
-Edit `server/.env` (copy from `.env.example`). The `.env.example` file includes:
+Edit `server/.env` (copy from `server/.env.example`). The `server/.env.example` file includes:
 
 ```bash
 # Instance Configuration (for running multiple instances on same host)
@@ -125,9 +123,12 @@ CLEANUP_SCHEDULE=0 3 * * 0  # Weekly Sunday at 3 AM
 
 ## Running Multiple Instances
 
-You can run multiple instances (e.g., "west" and "east") on the same host from separate repository checkouts. Each instance needs unique configuration:
+You can run multiple instances (e.g., "west" and "east") on the same host. Docker Compose automatically isolates resources by project name (directory name by default). Each instance needs unique configuration:
 
-**West instance** (`server/.env`):
+**Option 1: Separate directories (recommended)**
+Run each instance from a different directory. Docker Compose will automatically prefix volumes and networks with the directory name.
+
+**West instance** (`server/.env` in west-instance directory):
 ```bash
 INSTANCE_NAME=west
 HTTP_PORT=3000
@@ -138,7 +139,7 @@ DB_USER=west_meshmap
 DB_PASSWORD=west_password
 ```
 
-**East instance** (`server/.env`):
+**East instance** (`server/.env` in east-instance directory):
 ```bash
 INSTANCE_NAME=east
 HTTP_PORT=3001
@@ -149,13 +150,22 @@ DB_USER=east_meshmap
 DB_PASSWORD=east_password
 ```
 
+**Option 2: Same directory, different project names**
+Use the `-p` flag to set different project names:
+```bash
+# West instance
+docker-compose -p west up --build
+
+# East instance  
+docker-compose -p east up --build
+```
+
 This ensures:
 - Unique container names (`west-meshmap-db`, `east-meshmap-db`, etc.)
 - Unique ports (no conflicts)
-- Separate Docker volumes and networks
+- Separate Docker volumes (prefixed by project name: `west_postgres_data`, `east_postgres_data`)
+- Separate networks (prefixed by project name: `west_meshmap-network`, `east_meshmap-network`)
 - Separate databases
-
-Each instance runs independently from its own repository checkout.
 
 ## MQTT Scraper (Optional)
 
@@ -170,7 +180,6 @@ For automatic data collection from MQTT feeds:
 
 2. **Start with Docker:**
    ```bash
-   cd ../server
    docker-compose up -d mqtt-scraper
    docker-compose logs -f mqtt-scraper
    ```
@@ -232,7 +241,6 @@ exit  # Reconnect
 
 **Docker Compose "ContainerConfig" error:**
 ```bash
-cd server
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up -d --build
 ```

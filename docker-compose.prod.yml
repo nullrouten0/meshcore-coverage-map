@@ -1,0 +1,71 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ${INSTANCE_NAME:-default}-meshmap-db-prod
+    # Load DB credentials from .env file
+    env_file:
+      - server/.env
+    environment:
+      POSTGRES_USER: ${DB_USER:-${INSTANCE_NAME:-meshmap}}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-${INSTANCE_NAME:-meshmap}}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-${INSTANCE_NAME:-meshmap}}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - meshmap-network
+    restart: unless-stopped
+
+  app:
+    build:
+      context: server
+      dockerfile: Dockerfile
+    container_name: ${INSTANCE_NAME:-default}-meshmap-app-prod
+    # Load environment variables from .env file
+    env_file:
+      - server/.env
+    environment:
+      # Docker-specific overrides
+      DB_HOST: db
+      NODE_ENV: production
+      # All other config comes from server/.env file
+    ports:
+      - "${HTTP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - meshmap-network
+    restart: unless-stopped
+
+  mqtt-scraper:
+    build:
+      context: mqtt-scraper
+      dockerfile: Dockerfile
+    container_name: ${INSTANCE_NAME:-default}-meshmap-mqtt-scraper-prod
+    volumes:
+      - ./mqtt-scraper/config.json:/app/config.json:ro
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - meshmap-network
+    restart: unless-stopped
+
+# Volumes and networks are isolated per Docker Compose project
+# Each instance should be run from a separate directory or use -p flag
+# Example: docker-compose -f docker-compose.prod.yml -p west up (for "west" instance)
+# Or set COMPOSE_PROJECT_NAME environment variable
+
+volumes:
+  postgres_data:
+
+networks:
+  meshmap-network:
+    driver: bridge
+

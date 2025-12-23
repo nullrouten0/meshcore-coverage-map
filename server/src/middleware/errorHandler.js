@@ -1,4 +1,9 @@
 function errorHandler(err, req, res, next) {
+  // Suppress errors for missing static files (browsers often request icons for API routes)
+  if (err.code === 'ENOENT' && err.path && (err.path.endsWith('.svg') || err.path.endsWith('.ico'))) {
+    return res.status(404).end();
+  }
+  
   console.error('Error:', err);
   
   // Validation errors

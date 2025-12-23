@@ -87,11 +87,10 @@ The script will:
 
 ## Docker Setup
 
-If using Docker Compose, mosquitto is included in `server/docker-compose.yml`:
+If using Docker Compose, the scraper is included in `docker-compose.yml`:
 
 ```bash
-cd server
-docker-compose up mosquitto
+docker-compose up mqtt-scraper
 ```
 
 This starts a local mosquitto broker on:

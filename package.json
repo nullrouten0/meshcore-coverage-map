@@ -5,12 +5,12 @@
   "description": "MeshCore Coverage Map - Self-hosted version",
   "scripts": {
     "_comment": "These scripts are optional convenience wrappers. You can use docker-compose directly without npm.",
-    "docker:dev": "cd server && docker-compose up --build",
-    "docker:dev:detached": "cd server && docker-compose up -d --build",
-    "docker:down": "cd server && docker-compose down",
-    "docker:logs": "cd server && docker-compose logs -f",
-    "docker:prod": "cd server && docker-compose -f docker-compose.prod.yml up --build",
-    "docker:prod:detached": "cd server && docker-compose -f docker-compose.prod.yml up -d --build"
+    "docker:dev": "docker-compose up --build",
+    "docker:dev:detached": "docker-compose up -d --build",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:prod": "docker-compose -f docker-compose.prod.yml up --build",
+    "docker:prod:detached": "docker-compose -f docker-compose.prod.yml up -d --build"
   }
 }
 

@@ -1,0 +1,77 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ${INSTANCE_NAME:-default}-meshmap-db
+    # Load DB credentials from .env file (with defaults for fresh setup)
+    env_file:
+      - server/.env
+    environment:
+      POSTGRES_USER: ${DB_USER:-${INSTANCE_NAME:-meshmap}}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-meshmap_dev}
+      POSTGRES_DB: ${DB_NAME:-${INSTANCE_NAME:-meshmap}}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-${INSTANCE_NAME:-meshmap}}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - meshmap-network
+
+  app:
+    build:
+      context: server
+      dockerfile: Dockerfile.dev
+    container_name: ${INSTANCE_NAME:-default}-meshmap-app
+    # Load environment variables from .env file
+    # Copy server/.env.example to server/.env and configure your settings
+    env_file:
+      - server/.env
+    environment:
+      # Docker-specific overrides (service names, etc.)
+      DB_HOST: db
+      # All other config comes from server/.env file (see server/.env.example)
+    ports:
+      - "${HTTP_PORT:-3000}:3000"
+      - "${HTTPS_PORT:-3443}:3443"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+      - ./server/ssl:/app/ssl:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - meshmap-network
+    command: npm run dev
+
+  mqtt-scraper:
+    build:
+      context: mqtt-scraper
+      dockerfile: Dockerfile
+    container_name: ${INSTANCE_NAME:-default}-meshmap-mqtt-scraper
+    volumes:
+      - ./mqtt-scraper/config.json:/app/config.json:ro
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - meshmap-network
+    restart: unless-stopped
+
+# Volumes and networks are isolated per Docker Compose project
+# Each instance should be run from a separate directory or use -p flag
+# Example: docker-compose -p west up (for "west" instance)
+# Or set COMPOSE_PROJECT_NAME environment variable
+
+volumes:
+  postgres_data:
+
+networks:
+  meshmap-network:
+    driver: bridge
+

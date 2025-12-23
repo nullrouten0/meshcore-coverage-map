@@ -35,6 +35,19 @@ app.options('*', (req, res) => {
   res.sendStatus(200);
 });
 
+// API routes (before static files to handle API requests first)
+app.use('/', samplesRoutes);
+app.use('/', repeatersRoutes);
+app.use('/', coverageRoutes);
+app.use('/', nodesRoutes);
+app.use('/', adminRoutes);
+
+// Handle browser requests for icons on API routes (e.g., /get-nodes.svg)
+// These are common browser behaviors and should return 404 silently
+app.get(/\.(svg|ico)$/, (req, res) => {
+  res.status(404).end();
+});
+
 // Serve static files from public directory
 // Note: CORS is already handled globally, but we ensure proper MIME types for ES modules
 app.use(express.static(path.join(__dirname, '../public'), {
@@ -52,13 +65,6 @@ app.use(express.static(path.join(__dirname, '../public'), {
   // Don't fallthrough - let 404s be 404s
   fallthrough: false
 }));
-
-// API routes
-app.use('/', samplesRoutes);
-app.use('/', repeatersRoutes);
-app.use('/', coverageRoutes);
-app.use('/', nodesRoutes);
-app.use('/', adminRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
