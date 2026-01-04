@@ -169,7 +169,7 @@ This ensures:
 - Separate networks (prefixed by project name: `west_meshmap-network`, `east_meshmap-network`)
 - Separate databases
 
-## MQTT Scraper (Optional)
+## MQTT Scraper
 
 For automatic data collection from MQTT feeds:
 
@@ -220,6 +220,18 @@ Access the map and tools at:
 - `http://localhost:3000/addSample.html` - Add sample
 - `http://localhost:3000/addRepeater.html` - Add repeater
 - `http://localhost:3000/wardrive.html` - Wardrive app
+
+## migrating samples from an old instance to a new instance.
+
+# Use default URLs (in script)
+cd server
+node scripts/migrate-samples.js
+
+# Or specify custom URLs
+node scripts/migrate-samples.js --source https://source.domain.com/get-samples --dest https://dest.domain.com/put-sample
+
+# Add delay between requests (useful for rate limiting)
+node scripts/migrate-samples.js --delay 100
 
 ## Troubleshooting
 
