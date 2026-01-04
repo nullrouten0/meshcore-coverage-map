@@ -71,14 +71,7 @@ let map = null;
 let osm = null;
 let coverageLayer = null;
 let pingLayer = null;
-let currentLocMarker = L.circleMarker([0, 0], {
-  radius: 3,
-  weight: 0,
-  color: "red",
-  fillOpacity: .8,
-  interactive: false,
-  pane: "tooltipPane"
-}).addTo(map);
+let currentLocMarker = null;
 
 function setStatus(text, color = null) {
   statusEl.textContent = text;
@@ -374,8 +367,12 @@ async function updateCurrentPosition() {
   const lon = pos.coords.longitude;
   state.currentPos = [lat, lon];
 
-  currentLocMarker.setLatLng(state.currentPos);
-  map.panTo(state.currentPos);
+  if (currentLocMarker) {
+    currentLocMarker.setLatLng(state.currentPos);
+  }
+  if (map) {
+    map.panTo(state.currentPos);
+  }
 
   const coverageTileId = coverageKey(lat, lon);
   const needsPing = !state.coveredTiles.has(coverageTileId);
@@ -1044,8 +1041,15 @@ export async function onLoad() {
     coverageLayer = L.layerGroup().addTo(map);
     pingLayer = L.layerGroup().addTo(map);
     
-    // Add current location marker to map
-    currentLocMarker.addTo(map);
+    // Create and add current location marker to map
+    currentLocMarker = L.circleMarker([0, 0], {
+      radius: 3,
+      weight: 0,
+      color: "red",
+      fillOpacity: .8,
+      interactive: false,
+      pane: "tooltipPane"
+    }).addTo(map);
     
     loadLog();
     loadIgnoredId();
