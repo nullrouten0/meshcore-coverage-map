@@ -549,6 +549,37 @@ function successRateToColor(rate) {
 
 // Get value for current query mode (0-1 for color mapping)
 function getQueryValue(coverage) {
+  function recencyScore(ageDays) {
+    // Piecewise mapping:
+    // <=1 day: 1.0
+    // 2 days: 0.75
+    // 3 days: 0.50
+    // 5 days: 0.25
+    // >=7 days: 0.0
+    const points = [
+      { d: 0, v: 1.0 },
+      { d: 1, v: 1.0 },
+      { d: 2, v: 0.75 },
+      { d: 3, v: 0.50 },
+      { d: 5, v: 0.25 },
+      { d: 7, v: 0.0 },
+      { d: 30, v: 0.0 },
+    ];
+
+    // Clamp negative ages to 0
+    const clampedAge = Math.max(0, ageDays);
+
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      if (clampedAge <= curr.d) {
+        const t = (clampedAge - prev.d) / (curr.d - prev.d);
+        return prev.v + (curr.v - prev.v) * t;
+      }
+    }
+    return 0.0;
+  }
+
   switch (queryMode) {
     case 'coverage': {
       const totalSamples = coverage.rcv + coverage.lost;
@@ -566,17 +597,15 @@ function getQueryValue(coverage) {
       return totalSamples > 0 ? coverage.rcv / totalSamples : 0;
     }
     case 'last-updated': {
-      // Color by recency: newer = higher value (1 = very recent, 0 = very old)
+      // Color by recency with fixed breakpoints:
+      // <=1d:1.0, 2d:0.75, 3d:0.50, 5d:0.25, >=7d:0.0
       const truncatedTime = coverage.time || coverage.ut || coverage.lot || coverage.lht || 0;
       if (truncatedTime === 0) return 0.0; // No time data = old
       const timeMs = fromTruncatedTime(truncatedTime);
       const nowMs = Date.now();
       const ageMs = nowMs - timeMs;
       const ageDays = ageMs / (1000 * 86400);
-      // Map: 0 days = 1.0, 7 days = 0.5, 30 days = 0.0
-      if (ageDays <= 0) return 1.0;
-      if (ageDays >= 30) return 0.0;
-      return 1.0 - (ageDays / 30);
+      return recencyScore(ageDays);
     }
     case 'past-day': {
       // Only show if within past 24h, otherwise return 0 (will be filtered)
@@ -587,8 +616,8 @@ function getQueryValue(coverage) {
       const ageMs = nowMs - timeMs;
       const ageDays = ageMs / (1000 * 86400);
       if (ageDays > 1) return 0; // Filter out old data
-      // For coloring, use recency within past day
-      return ageDays <= 0 ? 1.0 : Math.max(0, 1.0 - ageDays);
+      // Within past day, still use recency scaling so sub-day ages stay at 1.0
+      return recencyScore(ageDays);
     }
     case 'repeater-count': {
       // Color by repeater count: 0=0.0, 1=0.5, 2=0.75, >2=1.0
