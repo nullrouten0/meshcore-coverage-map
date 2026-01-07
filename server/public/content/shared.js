@@ -358,6 +358,7 @@ function haversineMiles(a, b) {
 // Default values (will be updated from server config)
 var centerPos = [37.3382, -121.8863];
 var maxDistanceMiles = 0;
+var initialZoom = 10;
 
 // Fetch config from server
 let configPromise = null;
@@ -368,11 +369,12 @@ async function loadConfig() {
     .then(config => {
       centerPos = config.centerPos || centerPos;
       maxDistanceMiles = config.maxDistanceMiles || maxDistanceMiles;
+      initialZoom = config.initialZoom || initialZoom;
       return config;
     })
     .catch(err => {
       console.warn('Failed to load config from server, using defaults:', err);
-      return { centerPos, maxDistanceMiles };
+      return { centerPos, maxDistanceMiles, initialZoom };
     });
   return configPromise;
 }
@@ -460,6 +462,7 @@ export {
   fromTruncatedTime,
   export_geo as geo,
   haversineMiles,
+  initialZoom,
   isValidLocation,
   loadConfig,
   maxDistanceMiles,

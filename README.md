@@ -113,6 +113,9 @@ NODE_ENV=production
 CENTER_POS=37.3382,-121.8863
 MAX_DISTANCE_MILES=0  # 0 = no limit
 
+# Inital zoom level of the map view
+INITIAL_ZOOM_LEVEL=10
+
 # Automated maintenance
 CONSOLIDATE_ENABLED=true
 CONSOLIDATE_SCHEDULE=0 2 * * *  # Daily at 2 AM

@@ -1,15 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { getCenterPos, getMaxDistanceMiles } = require('../utils/shared');
+const { getCenterPos, getMaxDistanceMiles, getInitialZoom } = require('../utils/shared');
 
 // GET /config - Get frontend configuration
 router.get('/config', (req, res) => {
   const centerPos = getCenterPos();
   const maxDistanceMiles = getMaxDistanceMiles();
+  const initialZoom = getInitialZoom();
   
   res.json({
     centerPos: centerPos,
-    maxDistanceMiles: maxDistanceMiles
+    maxDistanceMiles: maxDistanceMiles,
+    initialZoom: initialZoom
   });
 });
 

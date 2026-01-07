@@ -65,8 +65,24 @@ function getMaxDistanceMiles() {
   return 0;
 }
 
+// Initial map zoom level (configurable via env var)
+// Set to higher integers to zoom in and lower integers to zoom out
+// Default: 10 
+function getInitialZoom() {
+  const zoomLevel = process.env.INITIAL_ZOOM_LEVEL;
+  if (zoomLevel !== undefined) {
+    const zoom = parseInt(zoomLevel);
+    if (!isNaN(zoom)) {
+      return zoom;
+    }
+  }
+  // Default: 10
+  return 10;
+}
+
 const centerPos = getCenterPos();
 const maxDistanceMiles = getMaxDistanceMiles();
+const initialZoom = getInitialZoom();
 
 function isValidLocation(p) {
   const [lat, lon] = p;
@@ -157,6 +173,7 @@ module.exports = {
   haversineMiles,
   centerPos,
   maxDistanceMiles,
+  initialZoom,
   isValidLocation,
   parseLocation,
   ageInDays,
@@ -169,5 +186,6 @@ module.exports = {
   and,
   getCenterPos,
   getMaxDistanceMiles,
+  getInitialZoom,
 };
 

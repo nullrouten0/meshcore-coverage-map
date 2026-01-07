@@ -3,6 +3,7 @@ import {
   centerPos,
   geo,
   haversineMiles,
+  initialZoom,
   loadConfig,
   maxDistanceMiles,
   posFromHash,
@@ -220,8 +221,8 @@ async function initMap() {
   // Load config from server
   await loadConfig();
   
-  // Initialize map with configured center position
-  map = L.map('map', { worldCopyJump: true }).setView(centerPos, 10);
+  // Initialize map with configured center position and initial zoom
+  map = L.map('map', { worldCopyJump: true }).setView(centerPos, initialZoom);
   
   // Create and add tile layer
   osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {

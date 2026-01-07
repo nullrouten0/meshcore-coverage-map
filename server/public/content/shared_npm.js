@@ -45,6 +45,7 @@ export function haversineMiles(a, b) {
 // Default: San Jose, CA (for map display purposes)
 export const centerPos = [37.3382, -121.8863];
 export const maxDistanceMiles = 0;
+export const initialZoom = 10;
 
 export function isValidLocation(p) {
   const [lat, lon] = p;

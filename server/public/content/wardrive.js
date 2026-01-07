@@ -14,6 +14,7 @@ import {
   centerPos,
   coverageKey,
   geo,
+  initialZoom,
   isValidLocation,
   loadConfig,
   maxDistanceMiles,
@@ -1029,7 +1030,7 @@ export async function onLoad() {
       tap: false,
       zoomControl: false,
       doubleClickZoom: false
-    }).setView(centerPos, 12);
+    }).setView(centerPos, initialZoom);
     
     // Create and add tile layer
     osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {

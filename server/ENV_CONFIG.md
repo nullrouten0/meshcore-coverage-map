@@ -32,6 +32,21 @@ Where:
 - `CENTER_POS` - Center point in "lat,lon" format
 - `MAX_DISTANCE_MILES` - Maximum distance in miles from center (set to 0 to disable)
 
+## Initial Map Zoom Settings
+
+- **Zoom Level**: 10 (Shows approximated 9100 square miles on a 1920x1080 screen)
+
+### Change Initial Zoom Level
+
+To display a different map zoom level on page load:
+
+```bash
+INITIAL_ZOOM_LEVEL=12
+```
+
+Where:
+- `INITIAL_ZOOM_LEVEL` - Initial map zoom level, higher numbers zoom in more and show less square miles.
+
 ## Maintenance Task Configuration
 
 ### Consolidate Task
