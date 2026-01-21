@@ -14,6 +14,7 @@ import {
   centerPos,
   coverageKey,
   geo,
+  haversineMiles,
   isValidLocation,
   loadConfig,
   maxDistanceMiles,
@@ -52,6 +53,8 @@ const pingModeSelect = $("pingModeSelect"); // May be null in simplified UI
 const intervalSelect = $("intervalSelect"); // May be null in simplified UI
 const minDistanceSelect = $("minDistanceSelect"); // May be null in simplified UI
 const ignoredRepeaterBtn = $("ignoredRepeaterBtn");
+const ignoreCoverageMapCheckbox = $("ignoreCoverageMapCheckbox");
+const debugModeCheckbox = $("debugModeCheckbox");
 
 // Channel key is derived from the channel hashtag.
 // Channel hash is derived from the channel key.
@@ -87,9 +90,18 @@ function log(msg) {
   console.log(msg);
 }
 
+function debugLog(msg) {
+  // Only log debug messages when debug mode is enabled
+  if (state.debugMode) {
+    console.log(msg);
+  }
+}
+
 // --- State ---
 const LOG_KEY = "meshcoreWardriveLogV1";
 const IGNORED_ID_KEY = "meshcoreWardriveIgnoredIdV1"
+const IGNORE_COVERAGE_MAP_KEY = "meshcoreWardriveIgnoreCoverageMapV1"
+const DEBUG_MODE_KEY = "meshcoreWardriveDebugModeV1"
 
 const state = {
   connection: null,
@@ -98,9 +110,12 @@ const state = {
   pingMode: "fill",
   running: false,
   autoTimerId: null,
+  coverageRefreshTimerId: null,
   lastSample: null, // { lat, lon, timestamp }
   wakeLock: null,
   ignoredId: null, // Allows a repeater to be ignored.
+  ignoreCoverageMap: false, // Ignore coverage map and send samples anyway
+  debugMode: false, // Enable verbose debug logging
   coveredTiles: new Set(),
   coverageTiles: new Map(), // tileId -> { o: 0|1, h: 0|1, a: ageInDays }
   locationTimer: null,
@@ -129,7 +144,7 @@ async function refreshCoverageData() {
   try {
     const resp = await fetch("/get-wardrive-coverage");
     const coveredTiles = (await resp.json()) ?? [];
-    log(`Got ${coveredTiles.length} covered tiles from service.`);
+    debugLog(`Got ${coveredTiles.length} covered tiles from service.`);
     coveredTiles.forEach(x => state.coveredTiles.add(x));
   } catch (e) {
     console.error("Getting coverage failed", e);
@@ -347,11 +362,71 @@ function updateIgnoreId() {
   if (ignoredRepeaterId) ignoredRepeaterId.innerText = state.ignoredId ?? "<none>";
 }
 
+// --- Ignore Coverage Map ---
+function loadIgnoreCoverageMap() {
+  try {
+    const saved = localStorage.getItem(IGNORE_COVERAGE_MAP_KEY);
+    state.ignoreCoverageMap = saved === "true";
+  } catch (e) {
+    console.warn("Failed to load ignore coverage map setting", e);
+    state.ignoreCoverageMap = false;
+  }
+  updateIgnoreCoverageMapCheckbox();
+}
+
+function saveIgnoreCoverageMap() {
+  try {
+    localStorage.setItem(IGNORE_COVERAGE_MAP_KEY, state.ignoreCoverageMap.toString());
+  } catch (e) {
+    console.warn("Failed to save ignore coverage map setting", e);
+  }
+}
+
+function updateIgnoreCoverageMapCheckbox() {
+  if (ignoreCoverageMapCheckbox) {
+    ignoreCoverageMapCheckbox.checked = state.ignoreCoverageMap;
+  }
+}
+
+// --- Debug Mode ---
+function loadDebugMode() {
+  try {
+    const saved = localStorage.getItem(DEBUG_MODE_KEY);
+    state.debugMode = saved === "true";
+  } catch (e) {
+    console.warn("Failed to load debug mode setting", e);
+    state.debugMode = false;
+  }
+  updateDebugModeCheckbox();
+}
+
+function saveDebugMode() {
+  try {
+    localStorage.setItem(DEBUG_MODE_KEY, state.debugMode.toString());
+  } catch (e) {
+    console.warn("Failed to save debug mode setting", e);
+  }
+}
+
+function updateDebugModeCheckbox() {
+  if (debugModeCheckbox) {
+    debugModeCheckbox.checked = state.debugMode;
+  }
+}
+
 // --- Geolocation ---
 async function startLocationTracking() {
   stopLocationTracking();
-  await updateCurrentPosition(); // Run immediately, then on timer.
-  state.locationTimer = setInterval(updateCurrentPosition, 1000);
+  await updateCurrentPosition().catch(e => {
+    // Initial location might fail - that's OK, the interval will retry
+    console.warn("Initial location update failed:", e.message);
+  });
+  state.locationTimer = setInterval(() => {
+    updateCurrentPosition().catch(e => {
+      // Location updates might fail occasionally - log but continue
+      console.warn("Periodic location update failed:", e.message);
+    });
+  }, 10000); // 10 seconds
 }
 
 function stopLocationTracking() {
@@ -362,24 +437,30 @@ function stopLocationTracking() {
 }
 
 async function updateCurrentPosition() {
-  const pos = await getCurrentPosition();
-  const lat = pos.coords.latitude;
-  const lon = pos.coords.longitude;
-  state.currentPos = [lat, lon];
+  try {
+    const pos = await getCurrentPosition();
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+    state.currentPos = [lat, lon];
 
-  if (currentLocMarker) {
-    currentLocMarker.setLatLng(state.currentPos);
+    if (currentLocMarker) {
+      currentLocMarker.setLatLng(state.currentPos);
+    }
+    if (map) {
+      map.panTo(state.currentPos);
+    }
+
+    const coverageTileId = coverageKey(lat, lon);
+    const needsPing = !state.coveredTiles.has(coverageTileId);
+    if (currentTileEl) currentTileEl.innerText = coverageTileId;
+    if (currentNeedsPingEl) currentNeedsPingEl.innerText = needsPing ? "✅" : "⛔";
+
+    state.lastPosUpdate = Date.now();
+  } catch (e) {
+    // Location might not be available - log but don't crash
+    console.warn("Location update failed:", e.message);
+    // Don't update lastPosUpdate so ensureCurrentPositionIsFresh will retry
   }
-  if (map) {
-    map.panTo(state.currentPos);
-  }
-
-  const coverageTileId = coverageKey(lat, lon);
-  const needsPing = !state.coveredTiles.has(coverageTileId);
-  if (currentTileEl) currentTileEl.innerText = coverageTileId;
-  if (currentNeedsPingEl) currentNeedsPingEl.innerText = needsPing ? "✅" : "⛔";
-
-  state.lastPosUpdate = Date.now();
 }
 
 function getCurrentPosition() {
@@ -390,11 +471,22 @@ function getCurrentPosition() {
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve(pos),
-      (err) => reject(err),
+      (err) => {
+        // Provide more helpful error messages
+        let message = "Position update unavailable";
+        if (err.code === 1) {
+          message = "Location permission denied";
+        } else if (err.code === 2) {
+          message = "Position unavailable (GPS may be off or weak signal)";
+        } else if (err.code === 3) {
+          message = "Location request timed out";
+        }
+        reject(new Error(message));
+      },
       {
         enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 5000,
+        maximumAge: 10000, // Accept cached location up to 10 seconds old
+        timeout: 10000, // Increase timeout to 10 seconds
       }
     );
   });
@@ -511,7 +603,7 @@ async function listenForRepeat(message, timeoutMs = 1000) {
         cleanup();
         resolve(detail);
       } else {
-        log(`Ignored repeat ${JSON.stringify(detail)}`);
+        debugLog(`Ignored repeat ${JSON.stringify(detail)}`);
       }
     };
 
@@ -530,6 +622,7 @@ async function listenForRepeat(message, timeoutMs = 1000) {
 }
 
 async function sendPing({ auto = false } = {}) {
+  debugLog(`sendPing called: auto=${auto}, mode=${state.pingMode}, lastSample=${state.lastSample ? `[${state.lastSample.lat.toFixed(4)}, ${state.lastSample.lon.toFixed(4)}]` : 'null'}`);
   if (!state.connection) {
     setStatus("Not connected", "text-red-300");
     return;
@@ -545,11 +638,18 @@ async function sendPing({ auto = false } = {}) {
     return;
   }
 
+  // Always force a fresh location update before checking distance/time thresholds
   try {
-    await ensureCurrentPositionIsFresh();
+    await updateCurrentPosition();
   } catch (e) {
     console.error("Get location failed", e);
     setStatus("Get location failed", "text-amber-300");
+    return;
+  }
+  
+  // If location update failed silently, check if we have a valid position
+  if (!state.currentPos || state.currentPos[0] === 0 && state.currentPos[1] === 0) {
+    setStatus("Location unavailable", "text-amber-300");
     return;
   }
 
@@ -570,11 +670,13 @@ async function sendPing({ auto = false } = {}) {
   if (state.pingMode === "interval") {
     // Ensure minimum distance met for interval auto ping.
     const minMiles = getMinDistanceMiles();
+    debugLog(`Interval mode: auto=${auto}, lastSample=${state.lastSample ? 'exists' : 'null'}, minMiles=${minMiles}`);
     if (auto && state.lastSample && minMiles > 0) {
       distanceMilesValue = haversineMiles(
         [state.lastSample.lat, state.lastSample.lon], [lat, lon]);
+      debugLog(`Distance check: ${distanceMilesValue.toFixed(3)} miles (min: ${minMiles} miles) from [${state.lastSample.lat.toFixed(4)}, ${state.lastSample.lon.toFixed(4)}] to [${lat.toFixed(4)}, ${lon.toFixed(4)}]`);
       if (distanceMilesValue < minMiles) {
-        log(`Min distance not met ${distanceMilesValue}, skipping.`);
+        debugLog(`Min distance not met ${distanceMilesValue.toFixed(3)} < ${minMiles}, skipping.`);
         setStatus("Skipped ping", "text-amber-300");
         addLogEntry({
           timestamp: new Date().toISOString(),
@@ -588,13 +690,25 @@ async function sendPing({ auto = false } = {}) {
         });
         return;
       }
+      debugLog(`Distance threshold met: ${distanceMilesValue.toFixed(3)} >= ${minMiles}, proceeding with ping.`);
+    } else if (auto && !state.lastSample) {
+      debugLog(`No lastSample yet, proceeding with first ping.`);
+    } else if (auto && minMiles === 0) {
+      debugLog(`Min distance is 0, proceeding with ping.`);
     }
   } else {
-    // Ensure ping is needed in the current tile.
+    // "fill" mode: Ensure ping is needed in the current tile.
+    // In fill mode, we ALWAYS respect the coverage map (ignoreCoverageMap only applies to interval mode)
     const needsPing = !state.coveredTiles.has(coverageTileId);
+    const hasTile = state.coveredTiles.has(coverageTileId);
+    debugLog(`Fill mode: coverageTileId="${coverageTileId}", hasTile=${hasTile}, needsPing=${needsPing}, coveredTiles.size=${state.coveredTiles.size}, auto=${auto}`);
     if (auto && !needsPing) {
+      debugLog(`Fill mode: Tile ${coverageTileId} already covered, skipping ping.`);
       setStatus("No ping needed", "text-amber-300");
       return;
+    }
+    if (auto && needsPing) {
+      debugLog(`Fill mode: Tile ${coverageTileId} needs ping, proceeding.`);
     }
   }
 
@@ -663,6 +777,7 @@ async function sendPing({ auto = false } = {}) {
   // the new 'last sample' to avoid spam.
   const nowIso = new Date().toISOString();
   state.lastSample = { lat, lon, timestamp: nowIso };
+  debugLog(`Updated lastSample to [${lat.toFixed(4)}, ${lon.toFixed(4)}] at ${nowIso}`);
   updateLastSampleInfo();
 
   if (!state.coveredTiles.has(coverageTileId)) {
@@ -726,6 +841,10 @@ function stopAutoPing() {
     clearInterval(state.autoTimerId);
     state.autoTimerId = null;
   }
+  if (state.coverageRefreshTimerId != null) {
+    clearInterval(state.coverageRefreshTimerId);
+    state.coverageRefreshTimerId = null;
+  }
   state.running = false;
   updateAutoButton();
   releaseWakeLock();
@@ -748,20 +867,38 @@ async function startAutoPing() {
   state.running = true;
   updateAutoButton();
 
-  let intervalMs = 10 * 1000;
+  let intervalMs;
   if (state.pingMode === "interval") {
     intervalMs = minutes * 60 * 1000;
+  } else {
+    // "fill" mode: check every 30 seconds if a tile needs filling
+    intervalMs = 30 * 1000;
   }
 
-  // TODO: Maybe this should be fetched periodically.
+  // Load initial coverage data
   await refreshCoverageData();
   redrawCoverage();
+
+  // In "fill" mode, periodically refresh coverage data to stay up to date
+  if (state.pingMode === "fill") {
+    // Refresh coverage every 2 minutes
+    state.coverageRefreshTimerId = setInterval(async () => {
+      debugLog("Refreshing coverage data...");
+      await refreshCoverageData();
+      redrawCoverage();
+    }, 2 * 60 * 1000);
+  }
+
+  // Ensure location tracking is active
+  await startLocationTracking();
 
   setStatus("Auto mode started", "text-emerald-300");
 
   // Send first ping immediately, then on interval.
   sendPing({ auto: true }).catch(console.error);
   state.autoTimerId = setInterval(() => {
+    debugLog(`Auto ping timer fired (interval: ${intervalMs}ms, mode: ${state.pingMode})`);
+    // sendPing will handle getting fresh location
     sendPing({ auto: true }).catch(console.error);
   }, intervalMs);
 
@@ -813,7 +950,6 @@ async function onConnected() {
   connectBtn.disabled = true;
   sendPingBtn.disabled = false;
   autoToggleBtn.disabled = false;
-  if (controlsSection) controlsSection.classList.remove("hidden");
 
   try {
     try {
@@ -863,7 +999,6 @@ function onDisconnected() {
   connectBtn.disabled = false;
   sendPingBtn.disabled = true;
   autoToggleBtn.disabled = true;
-  if (controlsSection) controlsSection.classList.add("hidden");
 
   state.connection = null;
   state.wardriveChannel = null;
@@ -975,6 +1110,20 @@ if (pingModeSelect) {
 
 ignoredRepeaterBtn.addEventListener("click", promptIgnoredId);
 
+if (ignoreCoverageMapCheckbox) {
+  ignoreCoverageMapCheckbox.addEventListener("change", () => {
+    state.ignoreCoverageMap = ignoreCoverageMapCheckbox.checked;
+    saveIgnoreCoverageMap();
+  });
+}
+
+if (debugModeCheckbox) {
+  debugModeCheckbox.addEventListener("change", () => {
+    state.debugMode = debugModeCheckbox.checked;
+    saveDebugMode();
+  });
+}
+
 if (clearLogBtn) {
   clearLogBtn.addEventListener("click", () => {
     if (!confirm("Clear local wardrive log?")) return;
@@ -1053,6 +1202,8 @@ export async function onLoad() {
     
     loadLog();
     loadIgnoredId();
+    loadIgnoreCoverageMap();
+    loadDebugMode();
     updateLastSampleInfo();
     updateAutoButton();
 

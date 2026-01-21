@@ -67,6 +67,63 @@
       <!-- The Map -->
       <div id="map" class="rounded-lg shadow-sm" style="height: 560px;"></div>
 
+      <!-- Manual Controls -->
+      <section id="controls" class="bg-slate-800/80 border border-slate-700 rounded-lg p-4 space-y-4 shadow-sm">
+        <!-- Ping Mode Control -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="space-y-1">
+            <label class="block text-sm text-slate-300">Auto Ping Mode</label>
+            <select id="pingModeSelect"
+              class="w-full bg-slate-900/70 border border-slate-600 rounded-lg px-2 py-1.5 text-sm">
+              <option value="fill" selected>Fill Missing Tiles</option>
+              <option value="interval">Interval</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Interval Controls -->
+        <section id="interval-controls" class="grid grid-cols-2 gap-4 hidden">
+          <div class="space-y-1">
+            <label class="block text-sm text-slate-300">Ping Interval</label>
+            <select id="intervalSelect"
+              class="w-full bg-slate-900/70 border border-slate-600 rounded-lg px-2 py-1.5 text-sm">
+              <option value="0.5">Every 30 seconds</option>
+              <option value="1" selected>Every 1 minute</option>
+              <option value="2">Every 2 minutes</option>
+              <option value="5">Every 5 minutes</option>
+              <option value="10">Every 10 minutes</option>
+            </select>
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-sm text-slate-300">Min Distance</label>
+            <select id="minDistanceSelect"
+              class="w-full bg-slate-900/70 border border-slate-600 rounded-lg px-2 py-1.5 text-sm">
+              <option value="0.5">0.5 miles</option>
+              <option value="1" selected>1 mile</option>
+              <option value="2">2 miles</option>
+              <option value="5">5 miles</option>
+            </select>
+          </div>
+        </section>
+
+        <!-- Ignore Coverage Map -->
+        <div class="space-y-1">
+          <label class="flex items-center gap-2">
+            <input type="checkbox" id="ignoreCoverageMapCheckbox" class="rounded">
+            <span class="text-sm text-slate-300">Ignore Coverage Map (send samples anyway)</span>
+          </label>
+        </div>
+
+        <!-- Debug Mode -->
+        <div class="space-y-1">
+          <label class="flex items-center gap-2">
+            <input type="checkbox" id="debugModeCheckbox" class="rounded">
+            <span class="text-sm text-slate-300">Enable Debug Logging (verbose console output)</span>
+          </label>
+        </div>
+      </section>
+
       <!-- Ignore Repeater -->
       <section class="bg-slate-800/80 border border-slate-700 rounded-lg p-2 space-y-2 shadow-sm">
         <div class="space-y-1">

@@ -25,7 +25,7 @@ function parseArgs() {
   const config = {
     source: DEFAULT_SOURCE,
     dest: DEFAULT_DEST,
-    delay: 100 // milliseconds between requests
+    delay: 30 // milliseconds between requests
   };
   
   for (let i = 0; i < args.length; i++) {
