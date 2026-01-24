@@ -173,8 +173,9 @@
     
     const $ = (id) => document.getElementById(id);
     let currentFilter = null;
-    let currentTimeRange = 'day';
-    let currentPacketType = 'all';
+    // Initialize from dropdown values
+    let currentTimeRange = $('timeRange').value;
+    let currentPacketType = $('packetType').value;
     let coverageMap = null;
     let coverageLayer = null;
     let repeaterLayer = null;

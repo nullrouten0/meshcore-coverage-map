@@ -167,4 +167,18 @@ router.get('/get-packet-types', async (req, res, next) => {
   }
 });
 
+// GET /debug-packet-counts - Debug endpoint to see packet counting
+router.get('/debug-packet-counts', async (req, res, next) => {
+  try {
+    const { packetType, timeRange } = req.query;
+    const packetTypeFilter = packetType ? parseInt(packetType) : 4; // Default to adverts
+    const timeRangeFilter = timeRange || null;
+    
+    const debugInfo = await packetPathsModel.debugPacketCounts(packetTypeFilter, timeRangeFilter);
+    res.json({ debug: debugInfo });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;
