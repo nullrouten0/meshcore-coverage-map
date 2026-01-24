@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>Path Statistics - MeshCore Coverage</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Path analysis and statistics for mesh network" />
+  <link rel="stylesheet" href="content/tailwind.css">
+  <style>
+    /* Custom scrollbar styling for the lists */
+    #originsList::-webkit-scrollbar,
+    #destinationsList::-webkit-scrollbar,
+    #membersList::-webkit-scrollbar {
+      width: 6px;
+    }
+    #originsList::-webkit-scrollbar-track,
+    #destinationsList::-webkit-scrollbar-track,
+    #membersList::-webkit-scrollbar-track {
+      background: rgb(30 41 59);
+      border-radius: 3px;
+    }
+    #originsList::-webkit-scrollbar-thumb,
+    #destinationsList::-webkit-scrollbar-thumb,
+    #membersList::-webkit-scrollbar-thumb {
+      background: rgb(71 85 105);
+      border-radius: 3px;
+    }
+    #originsList::-webkit-scrollbar-thumb:hover,
+    #destinationsList::-webkit-scrollbar-thumb:hover,
+    #membersList::-webkit-scrollbar-thumb:hover {
+      background: rgb(100 116 139);
+    }
+    /* Ensure lists respect max-height */
+    #originsList,
+    #destinationsList,
+    #membersList {
+      overflow-y: auto !important;
+      max-height: 280px !important;
+      display: block;
+    }
+  </style>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+
+<body class="bg-slate-900 text-slate-100">
+  <main class="min-h-screen p-4">
+    <div class="max-w-7xl mx-auto space-y-6">
+      
+      <!-- Header -->
+      <header class="flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-bold">Path Statistics</h1>
+          <p class="text-slate-400 text-sm mt-1">Analyze mesh network routing patterns</p>
+        </div>
+        <a href="/" class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">
+          Back to Map
+        </a>
+      </header>
+
+      <!-- Filter Boxes -->
+      <div class="space-y-4">
+        <!-- Time Range and Packet Type -->
+        <section class="bg-slate-800 rounded-lg p-4">
+          <div class="flex items-center gap-4 flex-wrap">
+            <label for="timeRange" class="text-sm font-medium">Time Range:</label>
+            <select 
+              id="timeRange" 
+              class="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="all">All Time</option>
+              <option value="hour">Past Hour</option>
+              <option value="day" selected>Past Day</option>
+              <option value="week">Past Week</option>
+              <option value="month">Past Month</option>
+            </select>
+            
+            <label for="packetType" class="text-sm font-medium ml-4">Packet Type:</label>
+            <select 
+              id="packetType" 
+              class="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="all">All Types</option>
+              <option value="0">REQ (Request)</option>
+              <option value="1">RESPONSE</option>
+              <option value="2">TXT_MSG (Text Message)</option>
+              <option value="3">ACK</option>
+              <option value="4" selected>ADVERT (Advertising)</option>
+              <option value="5">GRP_TXT (Group Text)</option>
+              <option value="6">GRP_DATA (Group Data)</option>
+              <option value="7">ANON_REQ (Anonymous Request)</option>
+              <option value="8">PATH</option>
+              <option value="9">TRACE</option>
+              <option value="15">RAW_CUSTOM</option>
+            </select>
+          </div>
+        </section>
+
+        <!-- Node Filter -->
+        <section class="bg-slate-800 rounded-lg p-4">
+          <div class="flex items-center gap-4">
+            <label for="filterNode" class="text-sm font-medium">Filter by Node:</label>
+            <input 
+              type="text" 
+              id="filterNode" 
+              placeholder="Enter node ID (e.g., a1)" 
+              maxlength="2"
+              class="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <button 
+              id="applyFilter" 
+              class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium"
+            >
+              Apply Filter
+            </button>
+            <button 
+              id="clearFilter" 
+              class="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded-lg text-sm font-medium"
+            >
+              Clear
+            </button>
+            <span id="filterStatus" class="text-sm text-slate-400"></span>
+          </div>
+        </section>
+      </div>
+
+      <!-- Stats Sections - Sequential Layout -->
+      <div class="space-y-6">
+        
+        <!-- Most Frequent Origin Nodes -->
+        <section class="bg-slate-800 rounded-lg p-4">
+          <h2 class="text-base font-semibold mb-3">Most Frequent Origin Nodes</h2>
+          <div id="originsList" class="space-y-1 pr-2 overflow-y-auto" style="max-height: 400px;">
+            <div class="text-slate-400 text-sm">Loading...</div>
+          </div>
+        </section>
+
+        <!-- Most Frequent Destination Nodes -->
+        <section class="bg-slate-800 rounded-lg p-4">
+          <h2 class="text-base font-semibold mb-3">Most Frequent Destination Nodes</h2>
+          <div id="destinationsList" class="space-y-1 pr-2 overflow-y-auto" style="max-height: 400px;">
+            <div class="text-slate-400 text-sm">Loading...</div>
+          </div>
+        </section>
+
+        <!-- Most Frequent Path Members -->
+        <section class="bg-slate-800 rounded-lg p-4">
+          <h2 class="text-base font-semibold mb-3">Most Frequent Path Members</h2>
+          <div class="text-xs text-slate-400 mb-2">Sorted by path count, then neighbor count</div>
+          <div id="membersList" class="space-y-1 pr-2 overflow-y-auto" style="max-height: 400px;">
+            <div class="text-slate-400 text-sm">Loading...</div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Map Section -->
+      <section class="bg-slate-800 rounded-lg p-4">
+        <h2 class="text-lg font-semibold mb-4">Coverage Map</h2>
+        <div id="coverageMap" class="w-full h-96 rounded-lg overflow-hidden border border-slate-600" style="min-height: 384px;"></div>
+        <div id="mapInfo" class="text-sm text-slate-400 mt-2">Click on a location to view coverage</div>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { parseLocation, geo } from '/content/shared.js';
+    
+    const $ = (id) => document.getElementById(id);
+    let currentFilter = null;
+    let currentTimeRange = 'day';
+    let currentPacketType = 'all';
+    let coverageMap = null;
+    let coverageLayer = null;
+    let repeaterLayer = null;
+    let currentMarker = null;
+
+    function setFilterStatus(text) {
+      $('filterStatus').textContent = text;
+    }
+
+    function formatNumber(num) {
+      return new Intl.NumberFormat().format(num);
+    }
+
+    function formatLocation(lat, lon) {
+      if (lat == null || lon == null) return 'Unknown';
+      const latNum = typeof lat === 'string' ? parseFloat(lat) : lat;
+      const lonNum = typeof lon === 'string' ? parseFloat(lon) : lon;
+      if (isNaN(latNum) || isNaN(lonNum)) return 'Unknown';
+      return `${latNum.toFixed(4)}, ${lonNum.toFixed(4)}`;
+    }
+
+    function getQueryParams() {
+      const params = new URLSearchParams();
+      params.append('limit', '100');
+      if (currentFilter) params.append('filter', currentFilter);
+      if (currentTimeRange && currentTimeRange !== 'all') params.append('timeRange', currentTimeRange);
+      if (currentPacketType && currentPacketType !== 'all') params.append('packetType', currentPacketType);
+      return params.toString();
+    }
+
+    function initMap() {
+      if (coverageMap) {
+        coverageMap.remove();
+        coverageMap = null;
+      }
+      
+      // Ensure the map container exists and is visible
+      const mapContainer = $('coverageMap');
+      if (!mapContainer) {
+        console.error('Map container not found');
+        return;
+      }
+      
+      // Initialize map
+      coverageMap = L.map('coverageMap', {
+        worldCopyJump: true,
+        zoomControl: true
+      }).setView([37.4241, -121.9756], 10);
+      
+      // Add tile layer
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(coverageMap);
+      
+      // Create layer groups
+      coverageLayer = L.layerGroup().addTo(coverageMap);
+      repeaterLayer = L.layerGroup().addTo(coverageMap);
+      
+      // Force map to invalidate size after a short delay (in case container was hidden)
+      setTimeout(() => {
+        if (coverageMap) {
+          coverageMap.invalidateSize();
+        }
+      }, 100);
+    }
+
+    async function loadCoverageForLocation(lat, lon, nodeId, nodeName) {
+      // Ensure map is initialized
+      if (!coverageMap) {
+        initMap();
+        // Wait a bit for map to initialize
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      
+      if (!coverageMap) {
+        console.error('Failed to initialize map');
+        $('mapInfo').textContent = 'Error: Could not initialize map';
+        return;
+      }
+      
+      // Center map on location
+      coverageMap.setView([lat, lon], 13);
+      
+      // Clear previous layers
+      if (coverageLayer) coverageLayer.clearLayers();
+      if (repeaterLayer) repeaterLayer.clearLayers();
+      if (currentMarker && coverageMap.hasLayer(currentMarker)) {
+        coverageMap.removeLayer(currentMarker);
+      }
+      
+      // Add marker for this location
+      currentMarker = L.marker([lat, lon], {
+        title: nodeName || nodeId
+      }).addTo(coverageMap);
+      
+      if (nodeName) {
+        currentMarker.bindPopup(`<strong>${nodeName}</strong><br/>${nodeId}<br/>${formatLocation(lat, lon)}`).openPopup();
+      } else {
+        currentMarker.bindPopup(`<strong>${nodeId}</strong><br/>${formatLocation(lat, lon)}`).openPopup();
+      }
+      
+      // Force map to update size
+      setTimeout(() => {
+        if (coverageMap) {
+          coverageMap.invalidateSize();
+        }
+      }, 100);
+      
+      // Load coverage data
+      try {
+        const resp = await fetch('/get-nodes', { headers: { 'Accept': 'application/json' } });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        
+        const nodes = await resp.json();
+        
+        // Render coverage boxes - filter to show only nearby ones
+        const bounds = coverageMap.getBounds();
+        
+        if (nodes.coverage) {
+          nodes.coverage.forEach(cov => {
+            try {
+              const [minLat, minLon, maxLat, maxLon] = decodeGeohash(cov.id);
+              const centerLat = (minLat + maxLat) / 2;
+              const centerLon = (minLon + maxLon) / 2;
+              
+              // Only render if within map bounds or close to clicked location
+              if (bounds.contains([centerLat, centerLon]) || 
+                  (Math.abs(centerLat - lat) < 0.1 && Math.abs(centerLon - lon) < 0.1)) {
+                renderCoverageBox(cov);
+              }
+            } catch (e) {
+              console.error('Error rendering coverage:', e);
+            }
+          });
+        }
+        
+        // Add repeaters - filter to nearby ones
+        if (nodes.repeaters) {
+          nodes.repeaters.forEach(r => {
+            // Only show repeaters within map bounds or close to clicked location
+            if (bounds.contains([r.lat, r.lon]) || 
+                (Math.abs(r.lat - lat) < 0.1 && Math.abs(r.lon - lon) < 0.1)) {
+              const repeaterMarker = L.marker([r.lat, r.lon], {
+                title: r.name || r.id
+              });
+              repeaterMarker.bindPopup(`<strong>${r.name || r.id}</strong><br/>${r.id}<br/>${formatLocation(r.lat, r.lon)}`);
+              repeaterLayer.addLayer(repeaterMarker);
+            }
+          });
+        }
+        
+        $('mapInfo').textContent = `Showing coverage near ${nodeName || nodeId}`;
+      } catch (error) {
+        console.error('Error loading coverage:', error);
+        $('mapInfo').textContent = `Error loading coverage: ${error.message}`;
+      }
+    }
+
+    function renderCoverageBox(coverage) {
+      const geohash = coverage.id || coverage.name;
+      const heard = coverage.rcv || coverage.heard || 0;
+      const lost = coverage.lost || 0;
+      const total = heard + lost;
+      const ratio = total > 0 ? heard / total : 0;
+      
+      const [minLat, minLon, maxLat, maxLon] = decodeGeohash(geohash);
+      
+      const color = ratio > 0.5 ? '#22c55e' : ratio > 0 ? '#eab308' : '#ef4444';
+      const opacity = Math.max(0.3, Math.min(0.8, ratio));
+      
+      const rect = L.rectangle([[minLat, minLon], [maxLat, maxLon]], {
+        color: color,
+        weight: 1,
+        fillColor: color,
+        fillOpacity: opacity
+      });
+      
+      rect.bindPopup(`<strong>${geohash}</strong><br/>Heard: ${heard}, Lost: ${lost}<br/>Ratio: ${(ratio * 100).toFixed(1)}%`);
+      coverageLayer.addLayer(rect);
+    }
+
+    function decodeGeohash(geohash) {
+      try {
+        if (geo && geo.decode_bbox) {
+          return geo.decode_bbox(geohash);
+        }
+        // Fallback if geo not available
+        return [0, 0, 0, 0];
+      } catch (e) {
+        console.error('Error decoding geohash:', e);
+        return [0, 0, 0, 0];
+      }
+    }
+
+    async function loadOrigins() {
+      try {
+        const url = `/get-top-origins?${getQueryParams()}`;
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        
+        const data = await resp.json();
+        const list = $('originsList');
+        
+        if (data.origins.length === 0) {
+          list.innerHTML = '<div class="text-slate-400 text-sm">No data</div>';
+          return;
+        }
+
+        list.innerHTML = data.origins.map(item => {
+          const latNum = item.lat != null ? (typeof item.lat === 'string' ? parseFloat(item.lat) : item.lat) : null;
+          const lonNum = item.lon != null ? (typeof item.lon === 'string' ? parseFloat(item.lon) : item.lon) : null;
+          const hasLocation = latNum != null && lonNum != null && !isNaN(latNum) && !isNaN(lonNum);
+          const locationText = hasLocation ? formatLocation(latNum, lonNum) : 'Unknown';
+          const nameText = item.name || 'Unnamed';
+          return `
+          <div class="p-1.5 bg-slate-700 rounded hover:bg-slate-600 cursor-pointer ${hasLocation ? '' : 'opacity-60'}" 
+               ${hasLocation ? `onclick="window.loadCoverageForLocation(${latNum}, ${lonNum}, '${item.source_node}', '${nameText.replace(/'/g, "\\'")}')"` : ''}>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0 flex-1">
+                <span class="font-mono font-semibold text-sm">${item.source_node}</span>
+                ${item.name ? `<span class="text-xs text-slate-300 truncate">${item.name}</span>` : ''}
+                <span class="text-xs text-slate-400 ml-auto">${locationText}</span>
+              </div>
+              <span class="text-xs text-slate-300 whitespace-nowrap">${formatNumber(item.path_count)}</span>
+            </div>
+          </div>
+        `;
+        }).join('');
+      } catch (error) {
+        $('originsList').innerHTML = `<div class="text-red-400 text-sm">Error: ${error.message}</div>`;
+      }
+    }
+
+    async function loadDestinations() {
+      try {
+        const url = `/get-top-destinations?${getQueryParams()}`;
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        
+        const data = await resp.json();
+        const list = $('destinationsList');
+        
+        if (data.destinations.length === 0) {
+          list.innerHTML = '<div class="text-slate-400 text-sm">No data</div>';
+          return;
+        }
+
+        list.innerHTML = data.destinations.map(item => {
+          const latNum = item.lat != null ? (typeof item.lat === 'string' ? parseFloat(item.lat) : item.lat) : null;
+          const lonNum = item.lon != null ? (typeof item.lon === 'string' ? parseFloat(item.lon) : item.lon) : null;
+          const hasLocation = latNum != null && lonNum != null && !isNaN(latNum) && !isNaN(lonNum);
+          const locationText = hasLocation ? formatLocation(latNum, lonNum) : 'Unknown';
+          const nameText = item.name || 'Unnamed';
+          return `
+          <div class="p-1.5 bg-slate-700 rounded hover:bg-slate-600 cursor-pointer ${hasLocation ? '' : 'opacity-60'}" 
+               ${hasLocation ? `onclick="window.loadCoverageForLocation(${latNum}, ${lonNum}, '${item.dest_node}', '${nameText.replace(/'/g, "\\'")}')"` : ''}>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0 flex-1">
+                <span class="font-mono font-semibold text-sm">${item.dest_node}</span>
+                ${item.name ? `<span class="text-xs text-slate-300 truncate">${item.name}</span>` : ''}
+                <span class="text-xs text-slate-400 ml-auto">${locationText}</span>
+              </div>
+              <span class="text-xs text-slate-300 whitespace-nowrap">${formatNumber(item.path_count)}</span>
+            </div>
+          </div>
+        `;
+        }).join('');
+      } catch (error) {
+        $('destinationsList').innerHTML = `<div class="text-red-400 text-sm">Error: ${error.message}</div>`;
+      }
+    }
+
+    async function loadPathMembers() {
+      try {
+        const url = `/get-top-path-members?${getQueryParams()}`;
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        
+        const data = await resp.json();
+        const list = $('membersList');
+        
+        if (data.members.length === 0) {
+          list.innerHTML = '<div class="text-slate-400 text-sm">No data</div>';
+          return;
+        }
+
+        list.innerHTML = data.members.map(item => {
+          const latNum = item.lat != null ? (typeof item.lat === 'string' ? parseFloat(item.lat) : item.lat) : null;
+          const lonNum = item.lon != null ? (typeof item.lon === 'string' ? parseFloat(item.lon) : item.lon) : null;
+          const hasLocation = latNum != null && lonNum != null && !isNaN(latNum) && !isNaN(lonNum);
+          const locationText = hasLocation ? formatLocation(latNum, lonNum) : 'Unknown';
+          const nameText = item.name || 'Unnamed';
+          return `
+          <div class="p-1.5 bg-slate-700 rounded hover:bg-slate-600 cursor-pointer ${hasLocation ? '' : 'opacity-60'}" 
+               ${hasLocation ? `onclick="window.loadCoverageForLocation(${latNum}, ${lonNum}, '${item.node_id}', '${nameText.replace(/'/g, "\\'")}')"` : ''}>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0 flex-1">
+                <span class="font-mono font-semibold text-sm">${item.node_id}</span>
+                ${item.name ? `<span class="text-xs text-slate-300 truncate">${item.name}</span>` : ''}
+                <span class="text-xs text-slate-400 ml-auto">${locationText}</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs text-slate-300 whitespace-nowrap">
+                <span>${formatNumber(item.path_count)}</span>
+                <span class="text-slate-500">·</span>
+                <span class="text-slate-400">${formatNumber(item.neighbor_count)} nbrs</span>
+              </div>
+            </div>
+          </div>
+        `;
+        }).join('');
+      } catch (error) {
+        $('membersList').innerHTML = `<div class="text-red-400 text-sm">Error: ${error.message}</div>`;
+      }
+    }
+
+    async function loadAll() {
+      await Promise.all([
+        loadOrigins(),
+        loadDestinations(),
+        loadPathMembers()
+      ]);
+    }
+
+    // Time range and packet type change handlers
+    $('timeRange').addEventListener('change', (e) => {
+      currentTimeRange = e.target.value;
+      loadAll();
+    });
+
+    $('packetType').addEventListener('change', (e) => {
+      currentPacketType = e.target.value;
+      loadAll();
+    });
+
+    $('applyFilter').addEventListener('click', () => {
+      const nodeId = $('filterNode').value.trim().toLowerCase();
+      if (nodeId.length === 2) {
+        currentFilter = nodeId;
+        setFilterStatus(`Filtering for node: ${nodeId}`);
+        loadAll();
+      } else {
+        setFilterStatus('Please enter a 2-character node ID');
+      }
+    });
+
+    $('clearFilter').addEventListener('click', () => {
+      currentFilter = null;
+      $('filterNode').value = '';
+      setFilterStatus('');
+      loadAll();
+    });
+
+    $('filterNode').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        $('applyFilter').click();
+      }
+    });
+
+    // Make loadCoverageForLocation available globally for onclick handlers
+    window.loadCoverageForLocation = loadCoverageForLocation;
+
+    // Initial load
+    loadAll();
+    
+    // Initialize map after DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(initMap, 100);
+      });
+    } else {
+      setTimeout(initMap, 100);
+    }
+  </script>
+</body>
+
+</html>
