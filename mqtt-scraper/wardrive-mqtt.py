@@ -5,6 +5,8 @@ import paho.mqtt.client as mqtt
 import re
 import requests
 import ssl
+import time
+from datetime import datetime
 
 from collections import deque
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -27,6 +29,7 @@ CHANNEL_SECRET = bytes.fromhex(CONFIG["channel_secret"])
 SERVICE_HOST = CONFIG["service_host"]
 ADD_REPEATER_URL = "/put-repeater"
 ADD_SAMPLE_URL = "/put-sample"
+ADD_PATH_URL = "/put-path"
 
 SEEN = deque(maxlen=100)
 COORD_PAIR = re.compile(
@@ -91,6 +94,30 @@ def upload_repeater(id: str, name: str, lat: float, lon: float):
   post_to_service(url, payload)
 
 
+# Uploads path data to the service.
+def upload_path(packet_hash: str, packet_type: int, route_type: int, 
+                observer_id: str, observer_name: str, path: list[str], timestamp: int):
+  if not path or len(path) == 0:
+    return
+  
+  source_node = path[0] if len(path) > 0 else None
+  dest_node = path[-1] if len(path) > 0 else None
+  
+  payload = {
+    "packet_hash": packet_hash,
+    "packet_type": packet_type,
+    "route_type": route_type,
+    "observer_id": observer_id,
+    "observer_name": observer_name,
+    "source_node": source_node,
+    "dest_node": dest_node,
+    "path": path,
+    "timestamp": timestamp
+  }
+  url = SERVICE_HOST + ADD_PATH_URL
+  post_to_service(url, payload)
+
+
 # Decrypts a payload using the given secret.
 def decrypt(secret: bytes, encrypted: bytes) -> bytes:
   cipher = Cipher(algorithms.AES(secret), modes.ECB())
@@ -101,6 +128,15 @@ def decrypt(secret: bytes, encrypted: bytes) -> bytes:
 # Decodes UTF8 characters and removes null padding bytes.
 def to_utf8(data: bytes) -> str:
   return data.decode("utf-8", "ignore").replace("\0", "")
+
+
+# Converts hex path string to list of 2-char node IDs.
+def parse_path_hex(path_hex: str) -> list[str]:
+  """Convert hex path string to list of 2-char node IDs."""
+  if not path_hex or len(path_hex) < 2:
+    return []
+  # Each node is 2 hex chars (1 byte)
+  return [path_hex[i:i+2].lower() for i in range(0, len(path_hex), 2)]
 
 
 # Builds a MeshCore packet from raw bytes.
@@ -240,26 +276,57 @@ def on_message(client, userdata, msg):
     packet_hash = data.get("hash")
     if (packet_hash is None or packet_hash in SEEN): return
 
-    # Is this one of the "authoritative" observers in the region?
-    if data["origin"] not in CONFIG["watched_observers"]: return
-
-    # Is this an advert (4) or group message (5)?
-    packet_type = data["packet_type"]
-    if packet_type not in ["4", "5"]: return
-
     # Parse the outer packet.
     raw = data["raw"]
     packet = make_packet(data["raw"])
+    packet_type = int(data["packet_type"])
 
     # Messages won't have the observer in the path.
     # Append the observer's id to the path.
-    packet["path"] += data["origin_id"][0:2].lower()
+    observer_id_hex = data["origin_id"][0:2].lower()
+    packet["path"] += observer_id_hex
     packet["path_len"] += 2
 
-    # Handle the app-specific payload.
-    if packet_type == "4":
+    # Parse the full path into an array of node IDs
+    path_array = parse_path_hex(packet["path"])
+    
+    # Upload path data for all packet types from ALL observers (for comprehensive path analysis)
+    # Use timestamp from data if available, otherwise use current time
+    # Handle both ISO 8601 strings and numeric timestamps
+    timestamp_value = data.get("timestamp", 0)
+    if timestamp_value == 0:
+      path_timestamp = int(time.time() * 1000)
+    elif isinstance(timestamp_value, str):
+      # Parse ISO 8601 timestamp string
+      try:
+        # Try parsing with microseconds
+        dt = datetime.fromisoformat(timestamp_value.replace('Z', '+00:00'))
+        path_timestamp = int(dt.timestamp() * 1000)
+      except (ValueError, AttributeError):
+        # Fallback to current time if parsing fails
+        path_timestamp = int(time.time() * 1000)
+    else:
+      # Already a number (assume milliseconds)
+      path_timestamp = int(timestamp_value)
+    
+    # Store path data for all packet types from all observers (including empty paths for analysis)
+    upload_path(
+      packet_hash,
+      packet_type,
+      packet["route_type"],
+      observer_id_hex,
+      data["origin"],
+      path_array,  # Can be empty - that's useful data too
+      path_timestamp
+    )
+
+    # Handle the app-specific payload (only for types 4 and 5) from watched observers only.
+    # This ensures we only process repeaters and samples from trusted observers.
+    if data["origin"] not in CONFIG["watched_observers"]: return
+
+    if packet_type == 4:
       handle_advert(packet)
-    elif packet_type == "5":
+    elif packet_type == 5:
       handle_channel_msg(packet)
 
     # All done, mark this hash 'seen'.
