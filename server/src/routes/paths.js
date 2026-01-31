@@ -14,7 +14,12 @@ router.post('/put-path', express.json(), async (req, res, next) => {
       source_node,
       dest_node,
       path,
-      timestamp
+      timestamp,
+      advert_pubkey,
+      advert_id,
+      advert_name,
+      advert_lat,
+      advert_lon
     } = req.body;
 
     // Validate required fields
@@ -41,7 +46,12 @@ router.post('/put-path', express.json(), async (req, res, next) => {
       normalizedSourceNode,
       normalizedDestNode,
       normalizedPath,
-      pathTimestamp
+      pathTimestamp,
+      advert_pubkey ? advert_pubkey.toLowerCase() : null,
+      advert_id ? advert_id.toLowerCase() : null,
+      advert_name || null,
+      advert_lat !== undefined && advert_lat !== null ? parseFloat(advert_lat) : null,
+      advert_lon !== undefined && advert_lon !== null ? parseFloat(advert_lon) : null
     );
 
     res.send('OK');

@@ -1,12 +1,12 @@
 const pool = require('../config/database');
 
-async function insert(packetHash, packetType, routeType, observerId, observerName, sourceNode, destNode, path, timestamp) {
+async function insert(packetHash, packetType, routeType, observerId, observerName, sourceNode, destNode, path, timestamp, advertPubkey = null, advertId = null, advertName = null, advertLat = null, advertLon = null) {
   const query = `
     INSERT INTO packet_paths (
       packet_hash, packet_type, route_type, observer_id, observer_name,
-      source_node, dest_node, path, path_length, timestamp
+      source_node, dest_node, path, path_length, timestamp, advert_pubkey, advert_id, advert_name, advert_lat, advert_lon
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     ON CONFLICT (packet_hash, observer_id) DO NOTHING
   `;
   
@@ -23,7 +23,12 @@ async function insert(packetHash, packetType, routeType, observerId, observerNam
     destNode || null,
     pathArray,
     pathArray.length,
-    timestamp
+    timestamp,
+    advertPubkey || null,
+    advertId || null,
+    advertName || null,
+    advertLat !== null && advertLat !== undefined ? advertLat : null,
+    advertLon !== null && advertLon !== undefined ? advertLon : null
   ]);
 }
 
@@ -143,8 +148,8 @@ async function getTopOriginNodes(limit = 20, filterNode = null, timeRange = null
   let query, params = [];
   let paramIndex = 1;
   
-  // Build WHERE conditions
-  const baseConditions = ['source_node IS NOT NULL', 'source_node != observer_id'];
+  // Build WHERE conditions - filter for adverts only (packet_type = 4) with public keys
+  const baseConditions = ['packet_type = 4', 'advert_pubkey IS NOT NULL', 'source_node IS NOT NULL', 'source_node != observer_id'];
   const timeConditions = [];
   
   if (timeRange && timeRange !== 'all') {
@@ -164,11 +169,7 @@ async function getTopOriginNodes(limit = 20, filterNode = null, timeRange = null
     }
   }
   
-  if (packetType !== null && packetType !== 'all') {
-    timeConditions.push('packet_type = $' + paramIndex);
-    params.push(parseInt(packetType));
-    paramIndex++;
-  }
+  // Note: packetType filter is ignored - we only analyze adverts (type 4)
   
   const allConditions = [...baseConditions, ...timeConditions];
   const whereClause = allConditions.join(' AND ');
@@ -181,7 +182,7 @@ async function getTopOriginNodes(limit = 20, filterNode = null, timeRange = null
       'WITH filtered_packets AS (' +
       '  SELECT DISTINCT ' +
       '    packet_hash,' +
-      '    source_node,' +
+      '    advert_pubkey,' +
       '    array_remove(path, observer_id) as filtered_path' +
       '  FROM packet_paths' +
       '  WHERE ' + whereClause +
@@ -189,66 +190,82 @@ async function getTopOriginNodes(limit = 20, filterNode = null, timeRange = null
       'paths_without_observer AS (' +
       '  SELECT ' +
       '    packet_hash,' +
-      '    source_node' +
+      '    advert_pubkey' +
       '  FROM filtered_packets' +
       '  WHERE $' + filterParamIndex + ' = ANY(filtered_path)' +
       '), ' +
       'node_counts AS (' +
       '  SELECT ' +
-      '    source_node,' +
-      '    COUNT(DISTINCT packet_hash) as path_count' +
-      '  FROM paths_without_observer' +
-      '  GROUP BY source_node' +
+      '    pwo.advert_pubkey as source_node,' +
+      '    COUNT(DISTINCT pwo.packet_hash) as path_count' +
+      '  FROM paths_without_observer pwo' +
+      '  WHERE pwo.advert_pubkey IS NOT NULL' +
+      '  GROUP BY pwo.advert_pubkey' +
+      '), ' +
+      'node_details AS (' +
+      '  SELECT DISTINCT ON (nc.source_node) ' +
+      '    nc.source_node,' +
+      '    nc.path_count,' +
+      '    pp.advert_id,' +
+      '    pp.advert_name as name,' +
+      '    pp.advert_lat,' +
+      '    pp.advert_lon' +
+      '  FROM node_counts nc' +
+      '  INNER JOIN packet_paths pp ON pp.advert_pubkey = nc.source_node' +
+      '    AND pp.advert_id IS NOT NULL' +
+      '  ORDER BY nc.source_node, pp.timestamp DESC' +
       ') ' +
       'SELECT ' +
-      '  nc.source_node,' +
-      '  nc.path_count,' +
-      '  r.name,' +
-      '  r.lat,' +
-      '  r.lon ' +
-      'FROM node_counts nc ' +
-      'LEFT JOIN LATERAL (' +
-      '  SELECT name, lat, lon ' +
-      '  FROM repeaters ' +
-      '  WHERE id = nc.source_node ' +
-      '  ORDER BY time DESC ' +
-      '  LIMIT 1' +
-      ') r ON true ' +
-      'ORDER BY nc.path_count DESC ' +
+      '  nd.source_node,' +
+      '  nd.path_count,' +
+      '  nd.advert_id,' +
+      '  nd.name,' +
+      '  nd.advert_lat as lat,' +
+      '  nd.advert_lon as lon ' +
+      'FROM node_details nd ' +
+      'ORDER BY nd.path_count DESC ' +
       'LIMIT $' + limitParamIndex;
     params.push(filterNode.toLowerCase(), limit);
   } else {
-    // Use COUNT(DISTINCT packet_hash) instead of DISTINCT ON to ensure proper deduplication
+    // Use advert_pubkey to identify source nodes (the sender of the advert)
     query = 
       'WITH filtered_packets AS (' +
       '  SELECT ' +
       '    packet_hash,' +
-      '    source_node' +
+      '    advert_pubkey' +
       '  FROM packet_paths' +
       '  WHERE ' + whereClause +
       '), ' +
       'node_counts AS (' +
       '  SELECT ' +
-      '    source_node,' +
-      '    COUNT(DISTINCT packet_hash) as path_count' +
-      '  FROM filtered_packets' +
-      '  GROUP BY source_node' +
+      '    fp.advert_pubkey as source_node,' +
+      '    COUNT(DISTINCT fp.packet_hash) as path_count' +
+      '  FROM filtered_packets fp' +
+      '  WHERE fp.advert_pubkey IS NOT NULL' +
+      '  GROUP BY fp.advert_pubkey' +
+      '), ' +
+      'node_details AS (' +
+      '  SELECT DISTINCT ON (nc.source_node) ' +
+      '    nc.source_node,' +
+      '    nc.path_count,' +
+      '    pp.advert_id,' +
+      '    pp.advert_name as name,' +
+      '    pp.advert_lat,' +
+      '    pp.advert_lon' +
+      '  FROM node_counts nc' +
+      '  INNER JOIN packet_paths pp ON pp.advert_pubkey = nc.source_node' +
+      '    AND pp.advert_id IS NOT NULL' +
+      '  ORDER BY nc.source_node, pp.timestamp DESC' +
       ') ' +
       'SELECT ' +
-      '  nc.source_node,' +
-      '  nc.path_count,' +
-      '  r.name,' +
-      '  r.lat,' +
-      '  r.lon ' +
-      'FROM node_counts nc ' +
-      'LEFT JOIN LATERAL (' +
-      '  SELECT name, lat, lon ' +
-      '  FROM repeaters ' +
-      '  WHERE id = nc.source_node ' +
-      '  ORDER BY time DESC ' +
-      '  LIMIT 1' +
-      ') r ON true ' +
-      'ORDER BY nc.path_count DESC ' +
+      '  nd.source_node,' +
+      '  nd.path_count,' +
+      '  nd.advert_id,' +
+      '  nd.name,' +
+      '  nd.advert_lat as lat,' +
+      '  nd.advert_lon as lon ' +
+      'FROM node_details nd ' +
+      'ORDER BY nd.path_count DESC ' +
       'LIMIT $' + paramIndex;
     params.push(limit);
   }
@@ -267,8 +284,8 @@ async function getTopDestinationNodes(limit = 20, filterNode = null, timeRange =
   let query, params = [];
   let paramIndex = 1;
   
-  // Build WHERE conditions
-  const conditions = ['array_length(path, 1) > 0'];
+  // Build WHERE conditions - filter for adverts only (packet_type = 4) with public keys
+  const conditions = ['packet_type = 4', 'advert_pubkey IS NOT NULL', 'array_length(path, 1) > 0'];
   
   if (timeRange && timeRange !== 'all') {
     const now = Date.now();
@@ -287,16 +304,13 @@ async function getTopDestinationNodes(limit = 20, filterNode = null, timeRange =
     }
   }
   
-  if (packetType !== null && packetType !== 'all') {
-    conditions.push(`packet_type = $${paramIndex}`);
-    params.push(parseInt(packetType));
-    paramIndex++;
-  }
+  // Note: packetType filter is ignored - we only analyze adverts (type 4)
   
   const whereClause = conditions.join(' AND ');
   
   if (filterNode) {
     // Filter paths that contain the specified node (excluding observer)
+    // For dest nodes, we need to find their pubkey by looking up rows where they appear as source
     const filterParamIndex = paramIndex;
     const limitParamIndex = paramIndex + 1;
     query = 
@@ -307,7 +321,7 @@ async function getTopDestinationNodes(limit = 20, filterNode = null, timeRange =
       '  FROM packet_paths' +
       '  WHERE ' + whereClause +
       '    AND dest_node IS NOT NULL' +
-      '    AND $' + filterParamIndex + ' = ANY(array_remove(path, observer_id))' +
+      '    AND $' + filterParamIndex + ' = ANY(path)' +
       '), ' +
       'node_counts AS (' +
       '  SELECT ' +
@@ -315,22 +329,32 @@ async function getTopDestinationNodes(limit = 20, filterNode = null, timeRange =
       '    COUNT(DISTINCT packet_hash) as path_count' +
       '  FROM filtered_packets' +
       '  GROUP BY dest_node' +
+      '), ' +
+      'dest_pubkeys AS (' +
+      '  SELECT DISTINCT ON (nc.dest_node) ' +
+      '    nc.dest_node,' +
+      '    nc.path_count,' +
+      '    pp.advert_pubkey as dest_pubkey,' +
+      '    pp.advert_id,' +
+      '    pp.advert_name,' +
+      '    pp.advert_lat,' +
+      '    pp.advert_lon' +
+      '  FROM node_counts nc' +
+      '  INNER JOIN packet_paths pp ON LOWER(SUBSTRING(pp.advert_pubkey, 1, 2)) = LOWER(nc.dest_node)' +
+      '    AND pp.advert_pubkey IS NOT NULL' +
+      '    AND pp.packet_type = 4' +
+      '  ORDER BY nc.dest_node, pp.timestamp DESC' +
       ') ' +
       'SELECT ' +
-      '  nc.dest_node,' +
-      '  nc.path_count,' +
-      '  r.name,' +
-      '  r.lat,' +
-      '  r.lon ' +
-      'FROM node_counts nc ' +
-      'LEFT JOIN LATERAL (' +
-      '  SELECT name, lat, lon ' +
-      '  FROM repeaters ' +
-      '  WHERE id = nc.dest_node ' +
-      '  ORDER BY time DESC ' +
-      '  LIMIT 1' +
-      ') r ON true ' +
-      'ORDER BY nc.path_count DESC ' +
+      '  dp.dest_pubkey as dest_node,' +
+      '  dp.path_count,' +
+      '  dp.advert_id,' +
+      '  dp.advert_name as name,' +
+      '  dp.advert_lat as lat,' +
+      '  dp.advert_lon as lon ' +
+      'FROM dest_pubkeys dp ' +
+      'WHERE dp.dest_pubkey IS NOT NULL ' +
+      'ORDER BY dp.path_count DESC ' +
       'LIMIT $' + limitParamIndex;
     params.push(filterNode.toLowerCase(), limit);
   } else {
@@ -349,22 +373,32 @@ async function getTopDestinationNodes(limit = 20, filterNode = null, timeRange =
       '    COUNT(DISTINCT packet_hash) as path_count' +
       '  FROM filtered_packets' +
       '  GROUP BY dest_node' +
+      '), ' +
+      'dest_pubkeys AS (' +
+      '  SELECT DISTINCT ON (nc.dest_node) ' +
+      '    nc.dest_node,' +
+      '    nc.path_count,' +
+      '    pp.advert_pubkey as dest_pubkey,' +
+      '    pp.advert_id,' +
+      '    pp.advert_name,' +
+      '    pp.advert_lat,' +
+      '    pp.advert_lon' +
+      '  FROM node_counts nc' +
+      '  INNER JOIN packet_paths pp ON LOWER(SUBSTRING(pp.advert_pubkey, 1, 2)) = LOWER(nc.dest_node)' +
+      '    AND pp.advert_pubkey IS NOT NULL' +
+      '    AND pp.packet_type = 4' +
+      '  ORDER BY nc.dest_node, pp.timestamp DESC' +
       ') ' +
       'SELECT ' +
-      '  nc.dest_node,' +
-      '  nc.path_count,' +
-      '  r.name,' +
-      '  r.lat,' +
-      '  r.lon ' +
-      'FROM node_counts nc ' +
-      'LEFT JOIN LATERAL (' +
-      '  SELECT name, lat, lon ' +
-      '  FROM repeaters ' +
-      '  WHERE id = nc.dest_node ' +
-      '  ORDER BY time DESC ' +
-      '  LIMIT 1' +
-      ') r ON true ' +
-      'ORDER BY nc.path_count DESC ' +
+      '  dp.dest_pubkey as dest_node,' +
+      '  dp.path_count,' +
+      '  dp.advert_id,' +
+      '  dp.advert_name as name,' +
+      '  dp.advert_lat as lat,' +
+      '  dp.advert_lon as lon ' +
+      'FROM dest_pubkeys dp ' +
+      'WHERE dp.dest_pubkey IS NOT NULL ' +
+      'ORDER BY dp.path_count DESC ' +
       'LIMIT $' + paramIndex;
     params.push(limit);
   }
@@ -377,8 +411,8 @@ async function getTopPathMembers(limit = 20, filterNode = null, timeRange = null
   let query, params = [];
   let paramIndex = 1;
   
-  // Build WHERE conditions
-  const conditions = ['array_length(path, 1) > 0'];
+  // Build WHERE conditions - filter for adverts only (packet_type = 4) with public keys
+  const conditions = ['packet_type = 4', 'advert_pubkey IS NOT NULL', 'array_length(path, 1) > 0'];
   
   if (timeRange && timeRange !== 'all') {
     const now = Date.now();
@@ -397,11 +431,7 @@ async function getTopPathMembers(limit = 20, filterNode = null, timeRange = null
     }
   }
   
-  if (packetType !== null && packetType !== 'all') {
-    conditions.push(`packet_type = $${paramIndex}`);
-    params.push(parseInt(packetType));
-    paramIndex++;
-  }
+  // Note: packetType filter is ignored - we only analyze adverts (type 4)
   
   const whereClause = conditions.join(' AND ');
   
@@ -415,10 +445,11 @@ async function getTopPathMembers(limit = 20, filterNode = null, timeRange = null
       '    packet_hash,' +
       '    source_node,' +
       '    dest_node,' +
-      '    array_remove(path, observer_id) as filtered_path' +
+      '    path[1:array_length(path, 1) - 1] as filtered_path' +
       '  FROM packet_paths' +
       '  WHERE ' + whereClause +
-      '    AND $' + filterParamIndex + ' = ANY(array_remove(path, observer_id))' +
+      '    AND array_length(path, 1) > 1' +
+      '    AND $' + filterParamIndex + ' = ANY(path[1:array_length(path, 1) - 1])' +
       '), ' +
       'paths_excluding_endpoints AS (' +
       '  SELECT ' +
@@ -454,24 +485,34 @@ async function getTopPathMembers(limit = 20, filterNode = null, timeRange = null
       '  AND pn2.node_id != pn1.node_id' +
       '  AND ABS(pn1.pos - pn2.pos) = 1' +
       '  GROUP BY pn1.node_id' +
+      '), ' +
+      'node_pubkeys AS (' +
+      '  SELECT DISTINCT ON (nc.node_id) ' +
+      '    nc.node_id,' +
+      '    nc.path_count,' +
+      '    pp.advert_pubkey as node_pubkey,' +
+      '    pp.advert_id,' +
+      '    pp.advert_name,' +
+      '    pp.advert_lat,' +
+      '    pp.advert_lon' +
+      '  FROM node_counts nc' +
+      '  INNER JOIN packet_paths pp ON LOWER(SUBSTRING(pp.advert_pubkey, 1, 2)) = LOWER(nc.node_id)' +
+      '    AND pp.advert_pubkey IS NOT NULL' +
+      '    AND pp.packet_type = 4' +
+      '  ORDER BY nc.node_id, pp.timestamp DESC' +
       ') ' +
       'SELECT ' +
-      '  nc.node_id,' +
-      '  nc.path_count,' +
+      '  np.node_pubkey as node_id,' +
+      '  np.path_count,' +
       '  COALESCE(n.neighbor_count, 0) as neighbor_count,' +
-      '  r.name,' +
-      '  r.lat,' +
-      '  r.lon ' +
-      'FROM node_counts nc ' +
-      'LEFT JOIN neighbors n ON nc.node_id = n.node_id ' +
-      'LEFT JOIN LATERAL (' +
-      '  SELECT name, lat, lon ' +
-      '  FROM repeaters ' +
-      '  WHERE id = nc.node_id ' +
-      '  ORDER BY time DESC ' +
-      '  LIMIT 1' +
-      ') r ON true ' +
-      'ORDER BY nc.path_count DESC, COALESCE(n.neighbor_count, 0) DESC ' +
+      '  np.advert_id,' +
+      '  np.advert_name as name,' +
+      '  np.advert_lat as lat,' +
+      '  np.advert_lon as lon ' +
+      'FROM node_pubkeys np ' +
+      'LEFT JOIN neighbors n ON LOWER(SUBSTRING(np.node_pubkey, 1, 2)) = n.node_id ' +
+      'WHERE np.node_pubkey IS NOT NULL ' +
+      'ORDER BY np.path_count DESC, COALESCE(n.neighbor_count, 0) DESC ' +
       'LIMIT $' + limitParamIndex;
     params.push(filterNode.toLowerCase(), limit);
   } else {
@@ -481,9 +522,10 @@ async function getTopPathMembers(limit = 20, filterNode = null, timeRange = null
       '    packet_hash,' +
       '    source_node,' +
       '    dest_node,' +
-      '    array_remove(path, observer_id) as filtered_path' +
+      '    path[1:array_length(path, 1) - 1] as filtered_path' +
       '  FROM packet_paths' +
       '  WHERE ' + whereClause +
+      '    AND array_length(path, 1) > 1' +
       '), ' +
       'paths_excluding_endpoints AS (' +
       '  SELECT ' +
@@ -517,24 +559,34 @@ async function getTopPathMembers(limit = 20, filterNode = null, timeRange = null
       '  WHERE pn1.node_id != pn2.node_id' +
       '  AND ABS(pn1.pos - pn2.pos) = 1' +
       '  GROUP BY pn1.node_id' +
+      '), ' +
+      'node_pubkeys AS (' +
+      '  SELECT DISTINCT ON (nc.node_id) ' +
+      '    nc.node_id,' +
+      '    nc.path_count,' +
+      '    pp.advert_pubkey as node_pubkey,' +
+      '    pp.advert_id,' +
+      '    pp.advert_name,' +
+      '    pp.advert_lat,' +
+      '    pp.advert_lon' +
+      '  FROM node_counts nc' +
+      '  INNER JOIN packet_paths pp ON LOWER(SUBSTRING(pp.advert_pubkey, 1, 2)) = LOWER(nc.node_id)' +
+      '    AND pp.advert_pubkey IS NOT NULL' +
+      '    AND pp.packet_type = 4' +
+      '  ORDER BY nc.node_id, pp.timestamp DESC' +
       ') ' +
       'SELECT ' +
-      '  nc.node_id,' +
-      '  nc.path_count,' +
+      '  np.node_pubkey as node_id,' +
+      '  np.path_count,' +
       '  COALESCE(n.neighbor_count, 0) as neighbor_count,' +
-      '  r.name,' +
-      '  r.lat,' +
-      '  r.lon ' +
-      'FROM node_counts nc ' +
-      'LEFT JOIN neighbors n ON nc.node_id = n.node_id ' +
-      'LEFT JOIN LATERAL (' +
-      '  SELECT name, lat, lon ' +
-      '  FROM repeaters ' +
-      '  WHERE id = nc.node_id ' +
-      '  ORDER BY time DESC ' +
-      '  LIMIT 1' +
-      ') r ON true ' +
-      'ORDER BY nc.path_count DESC, COALESCE(n.neighbor_count, 0) DESC ' +
+      '  np.advert_id,' +
+      '  np.advert_name as name,' +
+      '  np.advert_lat as lat,' +
+      '  np.advert_lon as lon ' +
+      'FROM node_pubkeys np ' +
+      'LEFT JOIN neighbors n ON LOWER(SUBSTRING(np.node_pubkey, 1, 2)) = n.node_id ' +
+      'WHERE np.node_pubkey IS NOT NULL ' +
+      'ORDER BY np.path_count DESC, COALESCE(n.neighbor_count, 0) DESC ' +
       'LIMIT $' + paramIndex;
     params.push(limit);
   }

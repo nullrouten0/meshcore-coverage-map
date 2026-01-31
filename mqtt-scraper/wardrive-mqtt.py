@@ -96,12 +96,29 @@ def upload_repeater(id: str, name: str, lat: float, lon: float):
 
 # Uploads path data to the service.
 def upload_path(packet_hash: str, packet_type: int, route_type: int, 
-                observer_id: str, observer_name: str, path: list[str], timestamp: int):
+                observer_id: str, observer_name: str, path: list[str], timestamp: int, 
+                advert_pubkey: str = None, advert_id: str = None, advert_name: str = None,
+                advert_lat: float = None, advert_lon: float = None):
   if not path or len(path) == 0:
     return
   
-  source_node = path[0] if len(path) > 0 else None
-  dest_node = path[-1] if len(path) > 0 else None
+  # For adverts, source_node should be the advert_id (the sender of the advert)
+  # For other packet types, use the first node in the path
+  if packet_type == 4 and advert_id:
+    source_node = advert_id
+  else:
+    source_node = path[0] if len(path) > 0 else None
+  
+  # For adverts, dest_node should be the second-to-last node (before the observer)
+  # The observer is appended to the path, so if path length > 2, dest is path[-2]
+  # If path length is 2 or less, ignore it (no destination - just source+observer or less)
+  if packet_type == 4:
+    if len(path) > 2:
+      dest_node = path[-2].lower()  # Second-to-last (before observer)
+    else:
+      dest_node = None  # Path too short, ignore (only source+observer or less)
+  else:
+    dest_node = path[-1] if len(path) > 0 else None
   
   payload = {
     "packet_hash": packet_hash,
@@ -114,6 +131,20 @@ def upload_path(packet_hash: str, packet_type: int, route_type: int,
     "path": path,
     "timestamp": timestamp
   }
+  
+  # Add full pubkey, 2-char ID, name, and location for adverts to disambiguate ID collisions
+  if packet_type == 4:
+    if advert_pubkey:
+      payload["advert_pubkey"] = advert_pubkey.lower()
+    if advert_id:
+      payload["advert_id"] = advert_id.lower()
+    if advert_name:
+      payload["advert_name"] = advert_name
+    if advert_lat is not None:
+      payload["advert_lat"] = advert_lat
+    if advert_lon is not None:
+      payload["advert_lon"] = advert_lon
+  
   url = SERVICE_HOST + ADD_PATH_URL
   post_to_service(url, payload)
 
@@ -125,9 +156,18 @@ def decrypt(secret: bytes, encrypted: bytes) -> bytes:
   return decryptor.update(encrypted) + decryptor.finalize()
 
 
-# Decodes UTF8 characters and removes null padding bytes.
+# Decodes UTF8 characters and removes null padding bytes and control characters.
 def to_utf8(data: bytes) -> str:
-  return data.decode("utf-8", "ignore").replace("\0", "")
+  # Decode UTF-8, ignoring errors
+  text = data.decode("utf-8", "ignore")
+  # Remove null bytes
+  text = text.replace("\0", "")
+  # Remove control characters (except newline, tab, carriage return)
+  # Control characters are 0x00-0x1F except 0x09 (tab), 0x0A (newline), 0x0D (carriage return)
+  import string
+  # Keep printable characters and whitespace (tab, newline, carriage return)
+  text = ''.join(c for c in text if c.isprintable() or c in '\t\n\r')
+  return text.strip()
 
 
 # Converts hex path string to list of 2-char node IDs.
@@ -309,6 +349,60 @@ def on_message(client, userdata, msg):
       # Already a number (assume milliseconds)
       path_timestamp = int(timestamp_value)
     
+    # Extract full pubkey, 2-char ID, name, and location for adverts to disambiguate ID collisions
+    advert_pubkey = None
+    advert_id = None
+    advert_name = None
+    advert_lat = None
+    advert_lon = None
+    if packet_type == 4:
+      try:
+        payload_buf = io.BytesIO(packet.get("payload", b""))
+        if len(packet.get("payload", b"")) >= 32:
+          pubkey_bytes = payload_buf.read(32)
+          advert_pubkey = pubkey_bytes.hex()
+          advert_id = pubkey_bytes.hex()[0:2].lower()  # First 2 hex chars of the pubkey
+          
+          # Read timestamp and signature to get to app data
+          payload_buf.read(4)  # timestamp
+          payload_buf.read(64)  # signature
+          
+          # Read flags byte
+          flags_bytes = payload_buf.read(1)
+          if len(flags_bytes) > 0:
+            flags = flags_bytes[0]
+            
+            # Check for lat/lon (ADV_LATLON_MASK = 0x10)
+            if flags & 0x10:  # ADV_LATLON_MASK
+              lat_bytes = payload_buf.read(4)
+              lon_bytes = payload_buf.read(4)
+              if len(lat_bytes) == 4 and len(lon_bytes) == 4:
+                # Lat/lon are signed int32 in little-endian, divided by 1e6
+                advert_lat = int.from_bytes(lat_bytes, byteorder="little", signed=True) / 1e6
+                advert_lon = int.from_bytes(lon_bytes, byteorder="little", signed=True) / 1e6
+                # Validate location
+                if not is_valid_location(advert_lat, advert_lon):
+                  advert_lat = None
+                  advert_lon = None
+            
+            # Check for battery/temperature flags (skip 2 bytes each if set)
+            if flags & 0x20:  # ADV_BATTERY_MASK
+              payload_buf.read(2)
+            if flags & 0x40:  # ADV_TEMPERATURE_MASK
+              payload_buf.read(2)
+            
+            # Check for name (ADV_NAME_MASK = 0x80)
+            if flags & 0x80:  # ADV_NAME_MASK
+              # Read the name field - it's a null-terminated string, max 32 bytes
+              name_bytes = payload_buf.read(32)  # Max name length is 32 bytes
+              # Find null terminator and stop there
+              null_pos = name_bytes.find(b'\x00')
+              if null_pos >= 0:
+                name_bytes = name_bytes[:null_pos]
+              advert_name = to_utf8(name_bytes)
+      except Exception:
+        pass  # If we can't extract it, that's okay - we'll just use 2-char ID
+    
     # Store path data for all packet types from all observers (including empty paths for analysis)
     upload_path(
       packet_hash,
@@ -317,7 +411,12 @@ def on_message(client, userdata, msg):
       observer_id_hex,
       data["origin"],
       path_array,  # Can be empty - that's useful data too
-      path_timestamp
+      path_timestamp,
+      advert_pubkey,
+      advert_id,
+      advert_name,
+      advert_lat,
+      advert_lon
     )
 
     # Handle the app-specific payload (only for types 4 and 5) from watched observers only.

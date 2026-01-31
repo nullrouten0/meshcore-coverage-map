@@ -141,7 +141,7 @@
 
         <!-- Most Frequent Destination Nodes -->
         <section class="bg-slate-800 rounded-lg p-4">
-          <h2 class="text-base font-semibold mb-3">Most Frequent Destination Nodes</h2>
+          <h2 class="text-base font-semibold mb-3">Most Frequent End of Path</h2>
           <div id="destinationsList" class="space-y-1 pr-2 overflow-y-auto" style="max-height: 400px;">
             <div class="text-slate-400 text-sm">Loading...</div>
           </div>
@@ -396,9 +396,10 @@
                ${hasLocation ? `onclick="window.loadCoverageForLocation(${latNum}, ${lonNum}, '${item.source_node}', '${nameText.replace(/'/g, "\\'")}')"` : ''}>
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 min-w-0 flex-1">
-                <span class="font-mono font-semibold text-sm">${item.source_node}</span>
+                ${item.advert_id ? `<span class="font-mono font-semibold text-sm">${item.advert_id}</span>` : ''}
+                <span class="font-mono text-xs text-slate-400">${item.source_node ? item.source_node.substring(0, 8) : ''}${item.source_node && item.source_node.length > 8 ? '...' : ''}</span>
                 ${item.name ? `<span class="text-xs text-slate-300 truncate">${item.name}</span>` : ''}
-                <span class="text-xs text-slate-400 ml-auto">${locationText}</span>
+                ${hasLocation ? `<span class="text-xs text-slate-400 ml-auto">${locationText}</span>` : ''}
               </div>
               <span class="text-xs text-slate-300 whitespace-nowrap">${formatNumber(item.path_count)}</span>
             </div>
@@ -435,9 +436,10 @@
                ${hasLocation ? `onclick="window.loadCoverageForLocation(${latNum}, ${lonNum}, '${item.dest_node}', '${nameText.replace(/'/g, "\\'")}')"` : ''}>
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 min-w-0 flex-1">
-                <span class="font-mono font-semibold text-sm">${item.dest_node}</span>
+                ${item.advert_id ? `<span class="font-mono font-semibold text-sm">${item.advert_id}</span>` : ''}
+                <span class="font-mono text-xs text-slate-400">${item.dest_node ? item.dest_node.substring(0, 8) : ''}${item.dest_node && item.dest_node.length > 8 ? '...' : ''}</span>
                 ${item.name ? `<span class="text-xs text-slate-300 truncate">${item.name}</span>` : ''}
-                <span class="text-xs text-slate-400 ml-auto">${locationText}</span>
+                ${hasLocation ? `<span class="text-xs text-slate-400 ml-auto">${locationText}</span>` : ''}
               </div>
               <span class="text-xs text-slate-300 whitespace-nowrap">${formatNumber(item.path_count)}</span>
             </div>
@@ -474,9 +476,10 @@
                ${hasLocation ? `onclick="window.loadCoverageForLocation(${latNum}, ${lonNum}, '${item.node_id}', '${nameText.replace(/'/g, "\\'")}')"` : ''}>
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 min-w-0 flex-1">
-                <span class="font-mono font-semibold text-sm">${item.node_id}</span>
+                ${item.advert_id ? `<span class="font-mono font-semibold text-sm">${item.advert_id}</span>` : ''}
+                <span class="font-mono text-xs text-slate-400">${item.node_id ? item.node_id.substring(0, 8) : ''}${item.node_id && item.node_id.length > 8 ? '...' : ''}</span>
                 ${item.name ? `<span class="text-xs text-slate-300 truncate">${item.name}</span>` : ''}
-                <span class="text-xs text-slate-400 ml-auto">${locationText}</span>
+                ${hasLocation ? `<span class="text-xs text-slate-400 ml-auto">${locationText}</span>` : ''}
               </div>
               <div class="flex items-center gap-2 text-xs text-slate-300 whitespace-nowrap">
                 <span>${formatNumber(item.path_count)}</span>
