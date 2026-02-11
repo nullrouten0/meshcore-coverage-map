@@ -236,6 +236,32 @@ node scripts/migrate-samples.js --source https://source.domain.com/get-samples -
 # Add delay between requests (useful for rate limiting)
 node scripts/migrate-samples.js --delay 100
 
+
+## top repeaters query logic (matches map "Top Repeaters")
+
+The map's **Top Repeaters** panel counts how many **6-character geohash coverage tiles** each repeater appears in (not raw sample count).
+
+Logic:
+1. Read samples from `GET /get-samples?p=<prefix>`
+2. Group samples by 6-char geohash prefix (`sample.name.substring(0, 6)`)
+3. For each tile, collect unique repeater IDs from `metadata.path`
+4. Count how many tiles each repeater appears in
+5. Sort descending by tile count
+
+Use the helper script:
+
+```bash
+cd server
+node scripts/top-repeaters-from-samples.js --url http://localhost:3000/get-samples
+python3 scripts/top-repeaters-from-samples.py --url http://localhost:3000/get-samples
+
+# Optional filters
+node scripts/top-repeaters-from-samples.js --url https://your.domain/get-samples --prefix c23n --limit 25
+python3 scripts/top-repeaters-from-samples.py --url https://your.domain/get-samples --prefix c23n --limit 25
+node scripts/top-repeaters-from-samples.js --url https://your.domain/get-samples --json
+python3 scripts/top-repeaters-from-samples.py --url https://your.domain/get-samples --json
+```
+
 ## Troubleshooting
 
 **Database connection issues:**
